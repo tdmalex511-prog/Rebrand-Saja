@@ -3,8 +3,8 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// Bot Token Tanımlaması (Yeni oluşturulan geçerli token)
-define('BOT_TOKEN', '8963816483:AAHHgIr0sR6eT3N5WUhgVQPAHxjM7jLjTg');
+// Bot Token Tanımlaması (Güncel ve doğru token)
+define('BOT_TOKEN', '8963816483:AAHHgIrOstR6eT3N5WUhgVQPAHxjM7jLjTg');
 define('API_URL', 'https://api.telegram.org/bot' . BOT_TOKEN . '/');
 
 // Veritabanı ve Panel Ayarları
