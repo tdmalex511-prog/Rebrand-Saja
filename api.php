@@ -1,19 +1,19 @@
-local userKey = tostring(getgenv().InputKey or "") 
-local panelUrl = "http://starbabvip.kesug.com/api.php?key=" .. userKey
+<?php
+require_once 'boot.php';
 
-local success, response = pcall(function()
-    return game:HttpGet(panelUrl)
-end)
+$content = file_get_contents("php://input");
+$update = json_decode($content, true);
 
-if success and response == "success" then
-    local BRPlayerCharacterBase = {
-        ServerRPC = {},
-        ClientRPC = {},
-        MulticastRPC = {},
-        LuaEventContainer = {}
-    }
-    
-    -- (Devamındaki orijinal kodlarınız burada yer alacak)
-else
-    return
-end
+if (!$update || !isset($update["message"])) {
+    exit;
+}
+
+$chatId = $update["message"]["chat"]["id"];
+$messageText = isset($update["message"]["text"]) ? trim($update["message"]["text"]) : "";
+
+if ($messageText === "/start") {
+    $replyText = "Merhaba! Starbaba Key Bot'a hoş geldiniz. Lütfen işleminizi seçin.";
+    $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($replyText);
+    file_get_contents($url);
+}
+?>
