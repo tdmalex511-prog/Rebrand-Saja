@@ -3,12 +3,11 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// Bot Token Tanımlaması
+// Bot Token Tanımlaması (Yeni oluşturulan geçerli token)
 define('BOT_TOKEN', '8963816483:AAHHgIr0sR6eT3N5WUhgVQPAHxjM7jLjTg');
 define('API_URL', 'https://api.telegram.org/bot' . BOT_TOKEN . '/');
 
-// Veritabanı ve Panel Ayarları (Gerekirse buraya ekleyebilirsin)
-// Örnek MySQL bağlantı ayarları (Eğer panelin veritabanı kullanıyorsa)
+// Veritabanı ve Panel Ayarları
 $db_host = getenv('DB_HOST') ?: 'localhost';
 $db_name = getenv('DB_NAME') ?: 'starbaba_db';
 $db_user = getenv('DB_USER') ?: 'root';
@@ -20,7 +19,6 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
     ]);
 } catch (PDOException $e) {
-    // Veritabanı bağlantı hatası durumunda loglama yapılabilir
-    // echo "Veritabanı bağlantı hatası: " . $e->getMessage();
+    // Veritabanı bağlantı hatası durumunda loglama
 }
 ?>
