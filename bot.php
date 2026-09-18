@@ -1,9 +1,9 @@
 <?php
-// Hata raporlamasını aktif edelim ki Render loglarında bir sorun olursa hemen görebilelim
+// Hata raporlamasını aktif edelim
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// Bot Token Tanımlaması (Güncel ve doğru token)
+// Bot Token Tanımlaması
 define('BOT_TOKEN', '8963816483:AAHHgIrOstR6eT3N5WUhgVQPAHxjM7jLjTg');
 define('API_URL', 'https://api.telegram.org/bot' . BOT_TOKEN . '/');
 
