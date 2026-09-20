@@ -1,7 +1,6 @@
 <?php
-// Hata raporlamasını kapatalım ki çıktı bozulmasın
-error_reporting(0);
-ini_set('display_errors', 0);
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
 define('BOT_TOKEN', '8963816483:AAHHgIrOstR6eT3N5WUhgVQPAHxjM7jLjTg');
 define('API_URL', 'https://api.telegram.org/bot' . BOT_TOKEN . '/');
@@ -26,6 +25,7 @@ function sendTelegram($method,$data) {
     $ch = curl_init(API_URL .$method);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS,$data);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_TIMEOUT, 5);
     $result = curl_exec($ch);
     curl_close($ch);
@@ -36,7 +36,6 @@ function sendTelegram($method,$data) {
 if (isset($_GET['key'])) {
     header('Content-Type: text/plain; charset=utf-8');
     $userKey = trim($_GET['key']);$keys = getKeysData();
-
     if (isset($keys[$userKey])) {
         echo ($keys[$userKey]['status'] === 'active') ? "success" : "banned";
     } else {
@@ -49,16 +48,17 @@ if (isset($_GET['key'])) {
 $input = file_get_contents("php://input");
 $update = json_decode($input, true);
 
-// Eğer tarayıcıdan normal bir şekilde girildiyse (Telegram'dan istek gelmediyse)
+// Gelen ham veriyi log.txt içine kaydedelim ki isteğin gelip gelmediğini görebilelim
+if (!empty($input)) {
+    file_put_contents('log.txt', $input . PHP_EOL, FILE_APPEND);
+}
+
 if (!$update) {
-    // Lua kontrolü veya buton isteği yoksa paneli göster
-    if (!isset($_GET['key'])) {
-        echo "STARBABA Panel Aktif ve Çalışıyor!";
-    }
+    echo "STARBABA Panel Aktif ve Çalışıyor!";
     exit;
 }
 
-// /start Komutu Kontrolü
+// /start Komutu
 if (isset($update["message"])) {
     $chatId =$update["message"]["chat"]["id"];
     $text = isset($update["message"]["text"]) ? trim($update["message"]["text"]) : "";
@@ -89,14 +89,14 @@ if (isset($update["message"])) {
     exit;
 }
 
-// Buton Tıklamaları (Callback Query) Kontrolü
+// Buton Tıklamaları (Callback Query)
 if (isset($update["callback_query"])) {
     $callback =$update["callback_query"];
     $callbackId =$callback["id"];
     $chatId =$callback["message"]["chat"]["id"];
     $data =$callback["data"];
 
-    // Butonun dönmesini hemen durdur
+    // Döndürmeyi durdur
     sendTelegram("answerCallbackQuery", [
         "callback_query_id" => $callbackId,
         "text" => "Key oluşturuluyor..."
@@ -123,7 +123,7 @@ if (isset($update["callback_query"])) {
 
         $replyText = "Yeni Key Üretildi:\n\n`" . $key . "`";
     } else {
-        $replyText = "Geçersiz işlem türü.";
+        $replyText = "Geçersiz işlem.";
     }
 
     sendTelegram("sendMessage", [
