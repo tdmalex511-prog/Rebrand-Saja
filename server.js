@@ -5,8 +5,8 @@ const TelegramBot = require('node-telegram-bot-api');
 const PORT = process.env.PORT || 10000;
 const app = express();
 
-// Telegram Bot Token'ını buraya ekleyebilir veya Render Environment Variables kısmına TOKEN olarak tanımlayabilirsin
-const token = process.env.TOKEN || 'SENIN_TELEGRAM_BOT_TOKEN_BURAYA';
+// Bot Token'ın doğrudan buraya eklenmiştir
+const token = '8600379958:AAEXZ7r9tFjyxubL7cRQSLMqhoPDZpl6Hfg';
 const bot = new TelegramBot(token, { polling: true });
 
 app.use(express.json());
@@ -16,7 +16,7 @@ app.get('/', (req, res) => {
     res.send('STARBABA KEY BOT is active and running!');
 });
 
-// Telegram Buton ve Komut Yönetimi
+// Telegram Komut Yönetimi (/start)
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
@@ -36,14 +36,13 @@ bot.on('message', async (msg) => {
     }
 });
 
-// Butonlara tıklandığında çalışacak kısım (Callback Query)
+// Butonlara tıklandığında key üretme kısmı (Callback Query)
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
 
     let generatedKey = '';
 
-    // Seçilen kategoriye göre key üretme
     switch (data) {
         case 'saatlik':
             generatedKey = 'STARBABA-SAAT-' + Math.random().toString(36).substring(2, 10).toUpperCase();
