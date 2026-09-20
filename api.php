@@ -1,5 +1,5 @@
 <?php
-// Hata raporlamasını kapatalım ki Telegram JSON çıktısı bozulmasın
+// Hata raporlamasını kapatalım
 error_reporting(0);
 ini_set('display_errors', 0);
 
@@ -45,7 +45,7 @@ if (isset($_GET['key'])) {
 }
 
 // ---------------------------------------------------------
-// 2. TELEGRAM BOT İŞLEMLERİ (7/24 Kesintisiz)
+// 2. TELEGRAM BOT İŞLEMLERİ
 // ---------------------------------------------------------
 $content = file_get_contents("php://input");
 $update = json_decode($content, true);
@@ -74,12 +74,12 @@ if (isset($update["callback_query"])) {
     $chatId = $callbackQuery["message"]["chat"]["id"];
     $data = $callbackQuery["data"];
 
-    // Telegram'a buton tıklamasını onaylat (Butonun takılı kalmasını önler)
-    @file_get_contents(API_URL . "answerCallbackQuery?callback_query_id=" . $callbackId);
+    // Buton dönmesini engellemek için Telegram'a anında boş onay gönder
+    fastRequest("answerCallbackQuery", ["callback_query_id" => $callbackId]);
 
     if (in_array($data, ['gunluk', 'haftalik', 'aylik', 'sinirsiz', 'free1000'])) {
         $key = generateAndSaveKey($data);
-        $replyText = "Yeni Key Üretildi ve Kaydedildi!\n\nTur: " . strtoupper($data) . "\nKey: " . $key;
+        $replyText = "Yeni Key Uretildi ve Kaydedildi!\n\nTur: " . strtoupper($data) . "\nKey: " . $key;
     } else {
         $replyText = "Gecersiz islem.";
     }
@@ -106,8 +106,14 @@ function sendMainMenu($chatId) {
     ];
 
     $replyText = "Starbaba Key Paneline Hos Geldiniz\n\nLutfen olusturmak istediginiz key turunu secin:";
-    $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($replyText) . "&reply_markup=" . urlencode(json_encode($keyboard));
-    @file_get_contents($url);
+    
+    $postData = [
+        'chat_id' => $chatId,
+        'text' => $replyText,
+        'reply_markup' => json_encode($keyboard)
+    ];
+
+    fastRequest("sendMessage", $postData);
 }
 
 // Key Üretme ve Kaydetme
@@ -199,9 +205,23 @@ function handleAdminCommands($chatId, $text) {
     sendMessage($chatId, $replyText);
 }
 
-// Mesaj Gönderim Fonksiyonu
+// Normal Mesaj Gönderme
 function sendMessage($chatId, $text) {
-    $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($text);
-    @file_get_contents($url);
+    $postData = [
+        'chat_id' => $chatId,
+        'text' => $text
+    ];
+    fastRequest("sendMessage", $postData);
+}
+
+// Asla Takılmayan ve Bekletmeyen Hızlı İstek Fonksiyonu (cURL)
+function fastRequest($method, $data) {
+    $ch = curl_init(API_URL . $method);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 1); // 1 saniye içinde isteği fırlatır ve bekletmez
+    curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+    curl_exec($ch);
+    curl_close($ch);
 }
 ?>
