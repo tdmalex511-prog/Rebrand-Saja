@@ -1,7 +1,10 @@
 <?php
-// Hata raporlamasını kapatalım
+// Hata raporlamasını ve çıktı tamponunu tamamen temizleyelim
 error_reporting(0);
 ini_set('display_errors', 0);
+while (ob_get_level()) {
+    ob_end_clean();
+}
 
 // Bot Token Tanımlaması
 define('BOT_TOKEN', '8963816483:AAHHgIrOstR6eT3N5WUhgVQPAHxjM7jLjTg');
@@ -45,7 +48,7 @@ if (isset($_GET['key'])) {
 }
 
 // ---------------------------------------------------------
-// 2. TELEGRAM BOT İŞLEMLERİ
+// 2. TELEGRAM BOT İŞLEMLERİ (Anında Yanıt Veren Yapı)
 // ---------------------------------------------------------
 $content = file_get_contents("php://input");
 $update = json_decode($content, true);
@@ -67,23 +70,25 @@ if (isset($update["message"])) {
     }
 }
 
-// Buton Tıklamaları (Callback Query) - TAKILMAYI ÖNLEYEN KRİTİK KISIM
+// Buton Tıklamaları (Callback Query)
 if (isset($update["callback_query"])) {
     $callbackQuery = $update["callback_query"];
     $callbackId = $callbackQuery["id"];
     $chatId = $callbackQuery["message"]["chat"]["id"];
     $data = $callbackQuery["data"];
 
-    // 1. Önce Telegram butonunun dönmesini durdurmak için anında onay gönderelim
-    $ansUrl = API_URL . "answerCallbackQuery?callback_query_id=" . $callbackId . "&text=" . urlencode("Key Hazırlanıyor...");
-    @file_get_contents($ansUrl);
+    // 1. Önce Telegram'a butonun dönmesini durduracak onayı anında fırlatalım
+    fastPost("answerCallbackQuery", [
+        "callback_query_id" => $callbackId,
+        "text" => "İşlem yapılıyor..."
+    ]);
 
-    // 2. Key türünü kontrol edip üretelim
+    // 2. Key türünü kontrol edip veritabanına kaydedelim
     if (in_array($data, ['gunluk', 'haftalik', 'aylik', 'sinirsiz', 'free1000'])) {
         $key = generateAndSaveKey($data);
-        $replyText = "Yeni Key Uretildi ve Kaydedildi!\n\nTur: " . strtoupper($data) . "\nKey: " . $key;
+        $replyText = "Yeni Key Üretildi ve Kaydedildi!\n\nTür: " . strtoupper($data) . "\nKey: " . $key;
     } else {
-        $replyText = "Gecersiz islem.";
+        $replyText = "Geçersiz işlem.";
     }
 
     // 3. Üretilen key'i kullanıcıya mesaj olarak gönderelim
@@ -108,9 +113,13 @@ function sendMainMenu($chatId) {
         ]
     ];
 
-    $replyText = "Starbaba Key Paneline Hos Geldiniz\n\nLutfen olusturmak istediginiz key turunu secin:";
-    $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($replyText) . "&reply_markup=" . urlencode(json_encode($keyboard));
-    @file_get_contents($url);
+    $replyText = "Starbaba Key Paneline Hoş Geldiniz\n\nLütfen oluşturmak istediğiniz key türünü seçin:";
+    
+    fastPost("sendMessage", [
+        'chat_id' => $chatId,
+        'text' => $replyText,
+        'reply_markup' => json_encode($keyboard)
+    ]);
 }
 
 // Key Üretme ve Kaydetme
@@ -149,7 +158,7 @@ function handleAdminCommands($chatId, $text) {
     $replyText = "";
 
     if (empty($targetKey)) {
-        sendMessage($chatId, "Lutfen bir key belirtin! Ornek: $command STARBABA-GUN-XXXX");
+        sendMessage($chatId, "Lütfen bir key belirtin! Örnek: $command STARBABA-GUN-XXXX");
         return;
     }
 
@@ -158,9 +167,9 @@ function handleAdminCommands($chatId, $text) {
             if (isset($keys[$targetKey])) {
                 $keys[$targetKey]['status'] = 'banned';
                 saveKeysData($keys);
-                $replyText = "$targetKey basariyla yasaklandi.";
+                $replyText = "$targetKey başarıyla yasaklandı.";
             } else {
-                $replyText = "Bu key veritabaninda bulunamadi.";
+                $replyText = "Bu key veritabanında bulunamadı.";
             }
             break;
 
@@ -168,9 +177,9 @@ function handleAdminCommands($chatId, $text) {
             if (isset($keys[$targetKey])) {
                 $keys[$targetKey]['status'] = 'active';
                 saveKeysData($keys);
-                $replyText = "$targetKey uzerindeki yasak kaldirildi.";
+                $replyText = "$targetKey üzerindeki yasak kaldırıldı.";
             } else {
-                $replyText = "Bu key veritabaninda bulunamadi.";
+                $replyText = "Bu key veritabanında bulunamadı.";
             }
             break;
 
@@ -178,9 +187,9 @@ function handleAdminCommands($chatId, $text) {
             if (isset($keys[$targetKey])) {
                 unset($keys[$targetKey]);
                 saveKeysData($keys);
-                $replyText = "$targetKey veritabanindan tamamen silindi.";
+                $replyText = "$targetKey veritabanından tamamen silindi.";
             } else {
-                $replyText = "Bu key veritabaninda bulunamadi.";
+                $replyText = "Bu key veritabanında bulunamadı.";
             }
             break;
 
@@ -188,9 +197,9 @@ function handleAdminCommands($chatId, $text) {
             if (isset($keys[$targetKey])) {
                 $keys[$targetKey]['status'] = 'active';
                 saveKeysData($keys);
-                $replyText = "$targetKey sifirlandi ve aktif hale getirildi.";
+                $replyText = "$targetKey sıfırlandı ve aktif hale getirildi.";
             } else {
-                $replyText = "Bu key veritabaninda bulunamadi.";
+                $replyText = "Bu key veritabanında bulunamadı.";
             }
             break;
 
@@ -204,7 +213,20 @@ function handleAdminCommands($chatId, $text) {
 
 // Mesaj Gönderme Fonksiyonu
 function sendMessage($chatId, $text) {
-    $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($text);
-    @file_get_contents($url);
+    fastPost("sendMessage", [
+        'chat_id' => $chatId,
+        'text' => $text
+    ]);
+}
+
+// cURL ile Telegram'a gecikmesiz istek atma fonksiyonu
+function fastPost($method, $data) {
+    $ch = curl_init(API_URL . $method);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+    curl_exec($ch);
+    curl_close($ch);
 }
 ?>
