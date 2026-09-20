@@ -1,4 +1,5 @@
 <?php
+// Hata raporlamasını kapatalım ki çıktı bozulmasın
 error_reporting(0);
 ini_set('display_errors', 0);
 
@@ -21,13 +22,11 @@ function saveKeysData($data) {
     file_put_contents($dbFile, json_encode($data, JSON_PRETTY_PRINT));
 }
 
-// Hızlı cURL isteği fonksiyonu (Takılmayı önleyen en net çözüm)
-function sendTelegramRequest($method,$data) {
+function sendTelegram($method,$data) {
     $ch = curl_init(API_URL .$method);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS,$data);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
     $result = curl_exec($ch);
     curl_close($ch);
     return $result;
@@ -47,35 +46,60 @@ if (isset($_GET['key'])) {
 }
 
 // 2. TELEGRAM WEBHOOK İŞLEMLERİ
-$content = file_get_contents("php://input");
-$update = json_decode($content, true);
+$input = file_get_contents("php://input");
+$update = json_decode($input, true);
 
+// Eğer tarayıcıdan normal bir şekilde girildiyse (Telegram'dan istek gelmediyse)
 if (!$update) {
-    echo "STARBABA Panel Aktif ve Çalışıyor!";
+    // Lua kontrolü veya buton isteği yoksa paneli göster
+    if (!isset($_GET['key'])) {
+        echo "STARBABA Panel Aktif ve Çalışıyor!";
+    }
     exit;
 }
 
-// /start Komutu
+// /start Komutu Kontrolü
 if (isset($update["message"])) {
     $chatId =$update["message"]["chat"]["id"];
     $text = isset($update["message"]["text"]) ? trim($update["message"]["text"]) : "";
 
     if ($text === "/start") {
-        sendMainMenu($chatId);
+        $keyboard = [
+            'inline_keyboard' => [
+                [
+                    ['text' => '📅 Günlük Key', 'callback_data' => 'gunluk'], 
+                    ['text' => '📆 Haftalık Key', 'callback_data' => 'haftalik']
+                ],
+                [
+                    ['text' => '🗓️ Aylık Key', 'callback_data' => 'aylik'], 
+                    ['text' => '♾️ Sınırsız Key', 'callback_data' => 'sinirsiz']
+                ],
+                [
+                    ['text' => '🎁 Free 1000 Cihaz Key', 'callback_data' => 'free1000']
+                ]
+            ]
+        ];
+
+        sendTelegram("sendMessage", [
+            "chat_id" => $chatId,
+            "text" => "Starbaba Key Paneline Hoş Geldiniz\n\nİstediğiniz key türünü seçin:",
+            "reply_markup" => json_encode($keyboard)
+        ]);
     }
+    exit;
 }
 
-// Buton Tıklamaları (Callback Query)
+// Buton Tıklamaları (Callback Query) Kontrolü
 if (isset($update["callback_query"])) {
     $callback =$update["callback_query"];
     $callbackId =$callback["id"];
     $chatId =$callback["message"]["chat"]["id"];
     $data =$callback["data"];
 
-    // 1. Önce Telegram'ın buton dönmesini durdurması için anında yanıt verelim
-    sendTelegramRequest("answerCallbackQuery", [
+    // Butonun dönmesini hemen durdur
+    sendTelegram("answerCallbackQuery", [
         "callback_query_id" => $callbackId,
-        "text" => "Key hazırlanıyor..."
+        "text" => "Key oluşturuluyor..."
     ]);
 
     $types = [
@@ -99,37 +123,14 @@ if (isset($update["callback_query"])) {
 
         $replyText = "Yeni Key Üretildi:\n\n`" . $key . "`";
     } else {
-        $replyText = "Geçersiz işlem.";
+        $replyText = "Geçersiz işlem türü.";
     }
 
-    // 2. Üretilen key'i kullanıcıya mesaj olarak gönderelim
-    sendTelegramRequest("sendMessage", [
+    sendTelegram("sendMessage", [
         "chat_id" => $chatId,
         "text" => $replyText,
         "parse_mode" => "Markdown"
     ]);
-}
-
-function sendMainMenu($chatId) {$keyboard = [
-        'inline_keyboard' => [
-            [
-                ['text' => '📅 Günlük Key', 'callback_data' => 'gunluk'], 
-                ['text' => '📆 Haftalık Key', 'callback_data' => 'haftalik']
-            ],
-            [
-                ['text' => '🗓️ Aylık Key', 'callback_data' => 'aylik'], 
-                ['text' => '♾️ Sınırsız Key', 'callback_data' => 'sinirsiz']
-            ],
-            [
-                ['text' => '🎁 Free 1000 Cihaz Key', 'callback_data' => 'free1000']
-            ]
-        ]
-    ];
-
-    sendTelegramRequest("sendMessage", [
-        "chat_id" => $chatId,
-        "text" => "Starbaba Key Paneline Hoş Geldiniz\n\nİstediğiniz key türünü seçin:",
-        "reply_markup" => json_encode($keyboard)
-    ]);
+    exit;
 }
 ?>
