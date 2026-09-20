@@ -21,6 +21,18 @@ function saveKeysData($data) {
     file_put_contents($dbFile, json_encode($data, JSON_PRETTY_PRINT));
 }
 
+// Hızlı cURL isteği fonksiyonu (Takılmayı önleyen en net çözüm)
+function sendTelegramRequest($method,$data) {
+    $ch = curl_init(API_URL .$method);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS,$data);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    $result = curl_exec($ch);
+    curl_close($ch);
+    return $result;
+}
+
 // 1. LUA SCRIPT API KONTROLÜ (?key=xxxx)
 if (isset($_GET['key'])) {
     header('Content-Type: text/plain; charset=utf-8');
@@ -60,7 +72,11 @@ if (isset($update["callback_query"])) {
     $chatId =$callback["message"]["chat"]["id"];
     $data =$callback["data"];
 
-    @file_get_contents(API_URL . "answerCallbackQuery?callback_query_id=" . $callbackId);
+    // 1. Önce Telegram'ın buton dönmesini durdurması için anında yanıt verelim
+    sendTelegramRequest("answerCallbackQuery", [
+        "callback_query_id" => $callbackId,
+        "text" => "Key hazırlanıyor..."
+    ]);
 
     $types = [
         'gunluk' => 'GUN', 
@@ -86,7 +102,12 @@ if (isset($update["callback_query"])) {
         $replyText = "Geçersiz işlem.";
     }
 
-    @file_get_contents(API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($replyText) . "&parse_mode=Markdown");
+    // 2. Üretilen key'i kullanıcıya mesaj olarak gönderelim
+    sendTelegramRequest("sendMessage", [
+        "chat_id" => $chatId,
+        "text" => $replyText,
+        "parse_mode" => "Markdown"
+    ]);
 }
 
 function sendMainMenu($chatId) {$keyboard = [
@@ -105,7 +126,10 @@ function sendMainMenu($chatId) {$keyboard = [
         ]
     ];
 
-    $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode("Starbaba Key Paneline Hoş Geldiniz\n\nİstediğiniz key türünü seçin:") . "&reply_markup=" . urlencode(json_encode($keyboard));
-    @file_get_contents($url);
+    sendTelegramRequest("sendMessage", [
+        "chat_id" => $chatId,
+        "text" => "Starbaba Key Paneline Hoş Geldiniz\n\nİstediğiniz key türünü seçin:",
+        "reply_markup" => json_encode($keyboard)
+    ]);
 }
 ?>
