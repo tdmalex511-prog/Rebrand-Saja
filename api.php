@@ -21,7 +21,7 @@ function saveKeysData($data) {
     file_put_contents($dbFile, json_encode($data, JSON_PRETTY_PRINT));
 }
 
-// 1. LUA SCRIPT API KONTROLÜ
+// 1. LUA SCRIPT API KONTROLÜ (?key=xxxx)
 if (isset($_GET['key'])) {
     header('Content-Type: text/plain; charset=utf-8');
     $userKey = trim($_GET['key']);$keys = getKeysData();
@@ -34,7 +34,7 @@ if (isset($_GET['key'])) {
     exit;
 }
 
-// 2. TELEGRAM WEBHOOK
+// 2. TELEGRAM WEBHOOK İŞLEMLERİ
 $content = file_get_contents("php://input");
 $update = json_decode($content, true);
 
@@ -42,7 +42,7 @@ if (!$update) {
     exit;
 }
 
-// Normal Mesajlar (/start)
+// /start Komutu
 if (isset($update["message"])) {
     $chatId =$update["message"]["chat"]["id"];
     $text = isset($update["message"]["text"]) ? trim($update["message"]["text"]) : "";
@@ -59,11 +59,16 @@ if (isset($update["callback_query"])) {
     $chatId =$callback["message"]["chat"]["id"];
     $data =$callback["data"];
 
-    // Önce Telegram'a döndürmeyi durdurması için sinyal verelim
-    file_get_contents(API_URL . "answerCallbackQuery?callback_query_id=" . $callbackId);
+    // Telegram butonunun dönmesini durdurmak için anında onay gönderiyoruz
+    @file_get_contents(API_URL . "answerCallbackQuery?callback_query_id=" . $callbackId);
 
-    // Key Türüne Göre Üretim
-    $types = ['gunluk' => 'GUN', 'haftalik' => 'HAF', 'aylik' => 'AYL', 'sinirsiz' => 'SNI', 'free1000' => 'FRE'];
+    $types = [
+        'gunluk' => 'GUN', 
+        'haftalik' => 'HAF', 
+        'aylik' => 'AYL', 
+        'sinirsiz' => 'SNI', 
+        'free1000' => 'FRE'
+    ];
     
     if (isset($types[$data])) {$prefix = "STARBABA-" . $types[$data] . "-";
         $key =$prefix . strtoupper(bin2hex(random_bytes(4)));
@@ -81,19 +86,26 @@ if (isset($update["callback_query"])) {
         $replyText = "Geçersiz işlem.";
     }
 
-    // Kullanıcıya Mesaj Gönder
-    file_get_contents(API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($replyText) . "&parse_mode=Markdown");
+    @file_get_contents(API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($replyText) . "&parse_mode=Markdown");
 }
 
 function sendMainMenu($chatId) {$keyboard = [
         'inline_keyboard' => [
-            [['text' => '📅 Günlük Key', 'callback_data' => 'gunluk'], ['text' => '📆 Haftalık Key', 'callback_data' => 'haftalik']],
-            [['text' => '🗓️ Aylık Key', 'callback_data' => 'aylik'], ['text' => '♾️ Sınırsız Key', 'callback_data' => 'sinirsiz']],
-            [['text' => '🎁 Free 1000 Cihaz Key', 'callback_data' => 'free1000']]
+            [
+                ['text' => '📅 Günlük Key', 'callback_data' => 'gunluk'], 
+                ['text' => '📆 Haftalık Key', 'callback_data' => 'haftalik']
+            ],
+            [
+                ['text' => '🗓️ Aylık Key', 'callback_data' => 'aylik'], 
+                ['text' => '♾️ Sınırsız Key', 'callback_data' => 'sinirsiz']
+            ],
+            [
+                ['text' => '🎁 Free 1000 Cihaz Key', 'callback_data' => 'free1000']
+            ]
         ]
     ];
 
     $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode("Starbaba Key Paneline Hoş Geldiniz\n\nİstediğiniz key türünü seçin:") . "&reply_markup=" . urlencode(json_encode($keyboard));
-    file_get_contents($url);
+    @file_get_contents($url);
 }
 ?>
