@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const PORT = process.env.PORT || 10000;
 const app = express();
 
-// Telegram Bot Token'ını buraya ekle veya Render Environment Variables kısmına TOKEN olarak tanımla
+// Telegram Bot Token'ını buraya ekleyebilir veya Render Environment Variables kısmına TOKEN olarak tanımlayabilirsin
 const token = process.env.TOKEN || 'SENIN_TELEGRAM_BOT_TOKEN_BURAYA';
 const bot = new TelegramBot(token, { polling: true });
 
@@ -43,32 +43,31 @@ bot.on('callback_query', async (query) => {
 
     let generatedKey = '';
 
-    // Seçilen kategoriye göre key üretme simülasyonu veya veritabanı bağlantısı
+    // Seçilen kategoriye göre key üretme
     switch (data) {
-        voter = data;
         case 'saatlik':
-            generatedKey = 'STARBABA-SAAT-XXXX-YYYY';
+            generatedKey = 'STARBABA-SAAT-' + Math.random().toString(36).substring(2, 10).toUpperCase();
             break;
         case 'gunluk':
-            generatedKey = 'STARBABA-GUN-XXXX-YYYY';
+            generatedKey = 'STARBABA-GUN-' + Math.random().toString(36).substring(2, 10).toUpperCase();
             break;
         case 'haftalik':
-            generatedKey = 'STARBABA-HAFTA-XXXX-YYYY';
+            generatedKey = 'STARBABA-HAFTA-' + Math.random().toString(36).substring(2, 10).toUpperCase();
             break;
         case 'aylik':
-            generatedKey = 'STARBABA-AY-XXXX-YYYY';
+            generatedKey = 'STARBABA-AY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
             break;
         case 'sinirsiz':
-            generatedKey = 'STARBABA-VIP-SINIRSIZ';
+            generatedKey = 'STARBABA-VIP-SINIRSIZ-' + Math.random().toString(36).substring(2, 10).toUpperCase();
             break;
         case 'free_1000':
-            generatedKey = 'STARBABA-1000-CIHAZ-FREE';
+            generatedKey = 'STARBABA-1000-CIHAZ-' + Math.random().toString(36).substring(2, 10).toUpperCase();
             break;
         default:
             generatedKey = 'Bilinmeyen işlem!';
     }
 
-    bot.sendMessage(chatId, `Seçtiğiniz Key:\n` + `<code>${generatedKey}</code>`, { parse_mode: 'HTML' });
+    bot.sendMessage(chatId, `Seçtiğiniz Key:\n<code>${generatedKey}</code>`, { parse_mode: 'HTML' });
     bot.answerCallbackQuery(query.id);
 });
 
