@@ -1,7 +1,7 @@
 {
   "name": "starbaba-key-bot",
   "version": "1.0.0",
-  "description": "Telegram Key Bot and API",
+  "description": "Starbaba Key System & Telegram Bot",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
