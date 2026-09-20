@@ -70,8 +70,12 @@ if (isset($update["message"])) {
 // Buton Tıklamaları (Callback Query)
 if (isset($update["callback_query"])) {
     $callbackQuery = $update["callback_query"];
+    $callbackId = $callbackQuery["id"];
     $chatId = $callbackQuery["message"]["chat"]["id"];
     $data = $callbackQuery["data"];
+
+    // Telegram'a buton tıklamasını onaylat (Butonun takılı kalmasını önler)
+    @file_get_contents(API_URL . "answerCallbackQuery?callback_query_id=" . $callbackId);
 
     if (in_array($data, ['gunluk', 'haftalik', 'aylik', 'sinirsiz', 'free1000'])) {
         $key = generateAndSaveKey($data);
@@ -195,7 +199,7 @@ function handleAdminCommands($chatId, $text) {
     sendMessage($chatId, $replyText);
 }
 
-// 7/24 Kesintisiz Çalışma İçin Düz Metin Gönderim Fonksiyonu (Markdown Hatası Yok)
+// Mesaj Gönderim Fonksiyonu
 function sendMessage($chatId, $text) {
     $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($text);
     @file_get_contents($url);
