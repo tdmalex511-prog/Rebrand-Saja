@@ -1,7 +1,7 @@
 {
-  "name": "rebrand-saja",
+  "name": "starbaba-key-bot",
   "version": "1.0.0",
-  "description": "Starbaba Key Bot",
+  "description": "Telegram Key Bot and API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
