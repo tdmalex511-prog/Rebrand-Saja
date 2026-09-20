@@ -7,15 +7,16 @@ ini_set('display_errors', 0);
 define('BOT_TOKEN', '8963816483:AAHHgIrOstR6eT3N5WUhgVQPAHxjM7jLjTg');
 define('API_URL', 'https://api.telegram.org/bot' . BOT_TOKEN . '/');
 
-// Basit Dosya Tabanlı Veritabanı (Veritabanı hatası almamak için JSON dosyası kullanıyoruz)
+// Basit Dosya Tabanlı Veritabanı
 $dbFile = 'keys.json';
 
 function getKeysData() {
     global $dbFile;
     if (!file_exists($dbFile)) {
-        file_put_contents($dbFile, json_encode([]));
+        file_put_contents($dbFile, json_encode([], JSON_PRETTY_PRINT));
     }
-    return json_decode(file_get_contents($dbFile), true);
+    $content = file_get_contents($dbFile);
+    return $content ? json_decode($content, true) : [];
 }
 
 function saveKeysData($data) {
@@ -98,12 +99,13 @@ function sendMainMenu($chatId) {$keyboard = [
 
     $replyText = "✨ **Starbaba Key Paneline Hoş Geldiniz**\n\nLütfen oluşturmak istediğiniz key türünü seçin:";
     $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($replyText) . "&parse_mode=Markdown&reply_markup=" . urlencode(json_encode($keyboard));
-    file_get_contents($url);
+    @file_get_contents($url);
 }
 
 // Key Üretme ve Kaydetme
 function generateAndSaveKey($type) {
-    $prefix = "STARBABA-" . strtoupper(substr($type, 0, 3)) . "-";
+    $typePrefixMap = [         'gunluk' => 'GUN',         'haftalik' => 'HAF',         'aylik' => 'AYL',         'sinirsiz' => 'SNI',         'free1000' => 'FRE'     ];$code = isset($typePrefixMap[$type]) ? $typePrefixMap[$type] : 'VIP';
+    $prefix = "STARBABA-" . $code . "-";
     $randomStr = strtoupper(bin2hex(random_bytes(4)));$key = $prefix .$randomStr;
 
     $keys = getKeysData();
@@ -177,6 +179,6 @@ function handleAdminCommands($chatId, $text) {$parts = explode(' ', $text);$comm
 }
 
 function sendMessage($chatId, $text) {$url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($text) . "&parse_mode=Markdown";
-    file_get_contents($url);
+    @file_get_contents($url);
 }
 ?>
