@@ -29,7 +29,8 @@ function saveKeysData($data) {
 // ---------------------------------------------------------
 if (isset($_GET['key'])) {
     header('Content-Type: text/plain; charset=utf-8');
-    $userKey = trim($_GET['key']);$keys = getKeysData();
+    $userKey = trim($_GET['key']);
+    $keys = getKeysData();
 
     if (isset($keys[$userKey])) {
         if ($keys[$userKey]['status'] === 'active') {
@@ -44,7 +45,7 @@ if (isset($_GET['key'])) {
 }
 
 // ---------------------------------------------------------
-// 2. TELEGRAM BOT İŞLEMLERİ
+// 2. TELEGRAM BOT İŞLEMLERİ (7/24 Kesintisiz)
 // ---------------------------------------------------------
 $content = file_get_contents("php://input");
 $update = json_decode($content, true);
@@ -53,35 +54,38 @@ if (!$update) {
     exit;
 }
 
-// Mesajlar (Komutlar)
+// Mesajlar (Komutlar /start vb.)
 if (isset($update["message"])) {
-    $chatId =$update["message"]["chat"]["id"];
+    $chatId = $update["message"]["chat"]["id"];
     $messageText = isset($update["message"]["text"]) ? trim($update["message"]["text"]) : "";
 
     if ($messageText === "/start") {
         sendMainMenu($chatId);
     } 
     elseif (strpos($messageText, '/') === 0) {
-        handleAdminCommands($chatId,$messageText);
+        handleAdminCommands($chatId, $messageText);
     }
 }
 
 // Buton Tıklamaları (Callback Query)
 if (isset($update["callback_query"])) {
-    $callbackQuery =$update["callback_query"];
-    $chatId =$callbackQuery["message"]["chat"]["id"];
-    $data =$callbackQuery["data"];
+    $callbackQuery = $update["callback_query"];
+    $chatId = $callbackQuery["message"]["chat"]["id"];
+    $data = $callbackQuery["data"];
 
-    if (in_array($data, ['gunluk', 'haftalik', 'aylik', 'sinirsiz', 'free1000'])) {$key = generateAndSaveKey($data);$replyText = "🔑 **Yeni Key Üretildi ve Kaydedildi!**\n\nTür: <code>" . strtoupper($data) . "</code>\nKey: <code>" . $key . "</code>";
+    if (in_array($data, ['gunluk', 'haftalik', 'aylik', 'sinirsiz', 'free1000'])) {
+        $key = generateAndSaveKey($data);
+        $replyText = "Yeni Key Üretildi ve Kaydedildi!\n\nTur: " . strtoupper($data) . "\nKey: " . $key;
     } else {
-        $replyText = "Geçersiz işlem.";
+        $replyText = "Gecersiz islem.";
     }
 
-    sendMessage($chatId,$replyText);
+    sendMessage($chatId, $replyText);
 }
 
 // Ana Menü Gönderimi
-function sendMainMenu($chatId) {$keyboard = [
+function sendMainMenu($chatId) {
+    $keyboard = [
         'inline_keyboard' => [
             [
                 ['text' => '📅 Günlük Key', 'callback_data' => 'gunluk'],
@@ -97,16 +101,25 @@ function sendMainMenu($chatId) {$keyboard = [
         ]
     ];
 
-    $replyText = "✨ **Starbaba Key Paneline Hoş Geldiniz**\n\nLütfen oluşturmak istediğiniz key türünü seçin:";
-    $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($replyText) . "&parse_mode=Markdown&reply_markup=" . urlencode(json_encode($keyboard));
+    $replyText = "Starbaba Key Paneline Hos Geldiniz\n\nLutfen olusturmak istediginiz key turunu secin:";
+    $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($replyText) . "&reply_markup=" . urlencode(json_encode($keyboard));
     @file_get_contents($url);
 }
 
 // Key Üretme ve Kaydetme
 function generateAndSaveKey($type) {
-    $typePrefixMap = [         'gunluk' => 'GUN',         'haftalik' => 'HAF',         'aylik' => 'AYL',         'sinirsiz' => 'SNI',         'free1000' => 'FRE'     ];$code = isset($typePrefixMap[$type]) ? $typePrefixMap[$type] : 'VIP';
+    $typePrefixMap = [
+        'gunluk' => 'GUN',
+        'haftalik' => 'HAF',
+        'aylik' => 'AYL',
+        'sinirsiz' => 'SNI',
+        'free1000' => 'FRE'
+    ];
+    
+    $code = isset($typePrefixMap[$type]) ? $typePrefixMap[$type] : 'VIP';
     $prefix = "STARBABA-" . $code . "-";
-    $randomStr = strtoupper(bin2hex(random_bytes(4)));$key = $prefix .$randomStr;
+    $randomStr = strtoupper(bin2hex(random_bytes(4)));
+    $key = $prefix . $randomStr;
 
     $keys = getKeysData();
     $keys[$key] = [
@@ -120,12 +133,16 @@ function generateAndSaveKey($type) {
 }
 
 // Admin Komutları İşleyicisi (/kban, /kuniban, /ksil, /kreset)
-function handleAdminCommands($chatId, $text) {$parts = explode(' ', $text);$command = strtolower($parts[0]);$targetKey = isset($parts[1]) ? trim($parts[1]) : '';
+function handleAdminCommands($chatId, $text) {
+    $parts = explode(' ', $text);
+    $command = strtolower($parts[0]);
+    $targetKey = isset($parts[1]) ? trim($parts[1]) : '';
 
-    $keys = getKeysData();$replyText = "";
+    $keys = getKeysData();
+    $replyText = "";
 
     if (empty($targetKey)) {
-        sendMessage($chatId, "⚠️ Lütfen bir key belirtin! Örnek: `$command STARBABA-GUN-XXXX`");
+        sendMessage($chatId, "Lutfen bir key belirtin! Ornek: $command STARBABA-GUN-XXXX");
         return;
     }
 
@@ -134,9 +151,9 @@ function handleAdminCommands($chatId, $text) {$parts = explode(' ', $text);$comm
             if (isset($keys[$targetKey])) {
                 $keys[$targetKey]['status'] = 'banned';
                 saveKeysData($keys);
-                $replyText = "🚫 <code>$targetKey</code> başarıyla yasaklandı.";
+                $replyText = "$targetKey basariyla yasaklandi.";
             } else {
-                $replyText = "❌ Bu key veritabanında bulunamadı.";
+                $replyText = "Bu key veritabaninda bulunamadi.";
             }
             break;
 
@@ -144,9 +161,9 @@ function handleAdminCommands($chatId, $text) {$parts = explode(' ', $text);$comm
             if (isset($keys[$targetKey])) {
                 $keys[$targetKey]['status'] = 'active';
                 saveKeysData($keys);
-                $replyText = "✅ <code>$targetKey</code> üzerindeki yasak kaldırıldı.";
+                $replyText = "$targetKey uzerindeki yasak kaldirildi.";
             } else {
-                $replyText = "❌ Bu key veritabanında bulunamadı.";
+                $replyText = "Bu key veritabaninda bulunamadi.";
             }
             break;
 
@@ -154,9 +171,9 @@ function handleAdminCommands($chatId, $text) {$parts = explode(' ', $text);$comm
             if (isset($keys[$targetKey])) {
                 unset($keys[$targetKey]);
                 saveKeysData($keys);
-                $replyText = "🗑️ <code>$targetKey</code> veritabanından tamamen silindi.";
+                $replyText = "$targetKey veritabanindan tamamen silindi.";
             } else {
-                $replyText = "❌ Bu key veritabanında bulunamadı.";
+                $replyText = "Bu key veritabaninda bulunamadi.";
             }
             break;
 
@@ -164,9 +181,9 @@ function handleAdminCommands($chatId, $text) {$parts = explode(' ', $text);$comm
             if (isset($keys[$targetKey])) {
                 $keys[$targetKey]['status'] = 'active';
                 saveKeysData($keys);
-                $replyText = "🔄 <code>$targetKey</code> sıfırlandı ve aktif hale getirildi.";
+                $replyText = "$targetKey sifirlandi ve aktif hale getirildi.";
             } else {
-                $replyText = "❌ Bu key veritabanında bulunamadı.";
+                $replyText = "Bu key veritabaninda bulunamadi.";
             }
             break;
 
@@ -175,10 +192,12 @@ function handleAdminCommands($chatId, $text) {$parts = explode(' ', $text);$comm
             break;
     }
 
-    sendMessage($chatId,$replyText);
+    sendMessage($chatId, $replyText);
 }
 
-function sendMessage($chatId, $text) {$url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($text) . "&parse_mode=Markdown";
+// 7/24 Kesintisiz Çalışma İçin Düz Metin Gönderim Fonksiyonu (Markdown Hatası Yok)
+function sendMessage($chatId, $text) {
+    $url = API_URL . "sendMessage?chat_id=" . $chatId . "&text=" . urlencode($text);
     @file_get_contents($url);
 }
 ?>
