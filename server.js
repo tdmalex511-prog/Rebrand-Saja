@@ -1,131 +1,78 @@
-const http = require('http');
-const https = require('https');
-const fs = require('fs');
+const express = require('express');
+const TelegramBot = require('node-telegram-bot-api');
 
-const TOKEN = '8963816483:AAHHgIrOstR6eT3N5WUhgVQPAHxjM7jLjTg';
-const PORT = process.env.PORT || 3000;
-const DB_FILE = 'keys.json';
+// Render port ayarı (10000 zorunludur)
+const PORT = process.env.PORT || 10000;
+const app = express();
 
-function getKeys() {
-    try {
-        if (!fs.existsSync(DB_FILE)) {
-            fs.writeFileSync(DB_FILE, JSON.stringify({}));
-        }
-        return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    } catch (e) {
-        return {};
-    }
-}
+// Telegram Bot Token'ını buraya ekle veya Render Environment Variables kısmına TOKEN olarak tanımla
+const token = process.env.TOKEN || 'SENIN_TELEGRAM_BOT_TOKEN_BURAYA';
+const bot = new TelegramBot(token, { polling: true });
 
-function saveKeys(data) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-}
+app.use(express.json());
 
-function callTelegram(method, data) {
-    const body = JSON.stringify(data);
-    const options = {
-        hostname: 'api.telegram.org',
-        path: `/bot${TOKEN}/${method}`,
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(body)
-        }
-    };
-    const req = https.request(options, (res) => {});
-    req.on('error', (e) => {});
-    req.write(body);
-    req.end();
-}
-
-const server = http.createServer((req, res) => {
-    const urlParams = new URL(req.url, `http://${req.headers.host}`);
-    
-    // 1. LUA SCRIPT API KONTROLÜ (?key=xxxx)
-    if (urlParams.searchParams.has('key')) {
-        const userKey = urlParams.searchParams.get('key').trim();
-        const keys = getKeys();
-        
-        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-        if (keys[userKey]) {
-            res.end(keys[userKey].status === 'active' ? 'success' : 'banned');
-        } else {
-            res.end('invalid');
-        }
-        return;
-    }
-
-    // 2. TELEGRAM WEBHOOK İSTEKLERI
-    if (req.method === 'POST') {
-        let body = '';
-        req.on('data', chunk => { body += chunk; });
-        req.on('end', () => {
-            try {
-                const update = JSON.parse(body);
-
-                // /start Komutu
-                if (update.message && update.message.text === '/start') {
-                    const chatId = update.message.chat.id;
-                    const keyboard = {
-                        inline_keyboard: [
-                            [{ text: '⏰ Saatlik Key', callback_data: 'saatlik' }, { text: '📅 Günlük Key', callback_data: 'gunluk' }],
-                            [{ text: '📆 Haftalık Key', callback_data: 'haftalik' }, { text: '🗓️ Aylık Key', callback_data: 'aylik' }],
-                            [{ text: '♾️ Sınırsız Key', callback_data: 'sinirsiz' }],
-                            [{ text: '🎁 Free 1000 Cihaz Key', callback_data: 'free1000' }]
-                        ]
-                    };
-                    callTelegram('sendMessage', {
-                        chat_id: chatId,
-                        text: 'Starbaba Key Paneline Hoş Geldiniz\n\nİstediğiniz key türünü seçin:',
-                        reply_markup: keyboard
-                    });
-                }
-
-                // Buton Tıklamaları (Callback Query)
-                if (update.callback_query) {
-                    const cb = update.callback_query;
-                    const chatId = cb.message.chat.id;
-                    const data = cb.data;
-
-                    callTelegram('answerCallbackQuery', {
-                        callback_query_id: cb.id,
-                        text: 'Key oluşturuluyor...'
-                    });
-
-                    // Saatlik key için 'SAT' öneki eklendi
-                    const types = { 
-                        'saatlik': 'SAT', 
-                        'gunluk': 'GUN', 
-                        'haftalik': 'HAF', 
-                        'aylik': 'AYL', 
-                        'sinirsiz': 'SNI', 
-                        'free1000': 'FRE' 
-                    };
-                    
-                    if (types[data]) {
-                        const key = `STARBABA-${types[data]}-${Math.random().toString(16).substr(2, 8).toUpperCase()}`;
-                        const keys = getKeys();
-                        keys[key] = { type: data, status: 'active', created_at: new Date().toISOString() };
-                        saveKeys(keys);
-
-                        callTelegram('sendMessage', {
-                            chat_id: chatId,
-                            text: `Yeni Key Üretildi:\n\n\`${key}\``,
-                            parse_mode: 'Markdown'
-                        });
-                    }
-                }
-            } catch (e) {}
-            res.writeHead(200, { 'Content-Type': 'text/plain' });
-            res.end('OK');
-        });
-        return;
-    }
-
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('STARBABA Node.js Panel Aktif ve Çalışıyor!');
+// Sağlık kontrolü için web endpoint
+app.get('/', (req, res) => {
+    res.send('STARBABA KEY BOT is active and running!');
 });
 
-server.listen(PORT, () => {
+// Telegram Buton ve Komut Yönetimi
+bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text;
+
+    if (text === '/start') {
+        const keyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '🕒 Saatlik Key', callback_data: 'saatlik' }, { text: '📅 Günlük Key', callback_data: 'gunluk' }],
+                    [{ text: '📆 Haftalık Key', callback_data: 'haftalik' }, { text: '🗓 Aylık Key', callback_data: 'aylik' }],
+                    [{ text: '♾️ Sınırsız Key', callback_data: 'sinirsiz' }],
+                    [{ text: '🎁 Free 1000 Cihaz Key', callback_data: 'free_1000' }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, 'Starbaba Key Paneline Hoş Geldiniz\n\nİstediğiniz key türünü seçin:', keyboard);
+    }
+});
+
+// Butonlara tıklandığında çalışacak kısım (Callback Query)
+bot.on('callback_query', async (query) => {
+    const chatId = query.message.chat.id;
+    const data = query.data;
+
+    let generatedKey = '';
+
+    // Seçilen kategoriye göre key üretme simülasyonu veya veritabanı bağlantısı
+    switch (data) {
+        voter = data;
+        case 'saatlik':
+            generatedKey = 'STARBABA-SAAT-XXXX-YYYY';
+            break;
+        case 'gunluk':
+            generatedKey = 'STARBABA-GUN-XXXX-YYYY';
+            break;
+        case 'haftalik':
+            generatedKey = 'STARBABA-HAFTA-XXXX-YYYY';
+            break;
+        case 'aylik':
+            generatedKey = 'STARBABA-AY-XXXX-YYYY';
+            break;
+        case 'sinirsiz':
+            generatedKey = 'STARBABA-VIP-SINIRSIZ';
+            break;
+        case 'free_1000':
+            generatedKey = 'STARBABA-1000-CIHAZ-FREE';
+            break;
+        default:
+            generatedKey = 'Bilinmeyen işlem!';
+    }
+
+    bot.sendMessage(chatId, `Seçtiğiniz Key:\n` + `<code>${generatedKey}</code>`, { parse_mode: 'HTML' });
+    bot.answerCallbackQuery(query.id);
+});
+
+// Sunucuyu başlatma
+app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
