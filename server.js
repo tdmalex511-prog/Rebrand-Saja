@@ -11,26 +11,28 @@ const bot = new TelegramBot(token, { polling: true });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Aktif keylerin tutulduğu bellek
+// Aktif keylerin tutulduğu ana bellek
 const activeKeys = {};
 
-// 🧹 ARKA PLANDA SÜREKLİ ÇALIŞAN SUNUCU TEMİZLİKÇİSİ (Süresi biten key'leri bellekten ve kökten siler)
+// 🧹 SUNUCU ARKA PLAN TEMİZLEYİCİSİ (Her 2 saniyede bir süresi biten key'leri kökten siler)
 setInterval(() => {
-    const now = Date.now();
-    for (const key in activeKeys) {
-        if (now > activeKeys[key].expiresAt) {
-            console.log(`[AUTO-DELETE] Süresi dolan key sunucudan tamamen silindi: ${key}`);
-            delete activeKeys[key]; // Bellekten kazı ve yok et
+    const currentTime = Date.now();
+    for (const k in activeKeys) {
+        if (activeKeys.hasOwnProperty(k)) {
+            if (currentTime > activeKeys[k].expiresAt) {
+                console.log(`[SÜRESİ BİTTİ VE SİLİNDİ]: ${k}`);
+                delete activeKeys[k]; // Bellekten ve panelden tamamen kazı
+            }
         }
     }
-}, 5000); // Her 5 saniyede bir süresi dolanları kontrol eder ve siler
+}, 2000);
 
 // Sunucu Durum Kontrolü
 app.get('/', (req, res) => {
     res.send('STARBABA KEY BOT & API is active and running perfectly!');
 });
 
-// Lua / Oyun Tarafından Lisans Sorgulama (GET)
+// Lua Tarafından Lisans Sorgulama (GET /check)
 app.get('/check', (req, res) => {
     const key = req.query.key ? req.query.key.trim() : '';
     const hwid = req.query.hwid ? req.query.hwid.trim() : '';
@@ -41,17 +43,13 @@ app.get('/check', (req, res) => {
 
     const keyData = activeKeys[key];
 
-    // Key veritabanında (bellekte) yoksa veya yukarıdaki döngü sildiyse
+    // Key bellekte yoksa veya süresi dolup temizlendiyse
     if (!keyData) {
-        console.log(`[CHECK] Reddedildi - Key bulunamadı veya süresi bitti: ${key}`);
         return res.send('error: expired');
     }
 
-    const now = Date.now();
-
-    // Süre doldu mu kesin kontrolü
-    if (now > keyData.expiresAt) {
-        console.log(`[CHECK] Süresi dolmuş key engellendi: ${key}`);
+    // Anlık zaman kontrolü
+    if (Date.now() > keyData.expiresAt) {
         delete activeKeys[key];
         return res.send('error: expired');
     }
@@ -59,16 +57,14 @@ app.get('/check', (req, res) => {
     // HWID Eşleştirme Koruması
     if (!keyData.hwid && hwid && hwid !== 'UNKNOWN_DEV') {
         keyData.hwid = hwid;
-        console.log(`[CHECK] HWID Eşleşti -> Key: ${key} | HWID: ${hwid}`);
     } else if (keyData.hwid && hwid && keyData.hwid !== hwid && hwid !== 'UNKNOWN_DEV') {
-        console.log(`[CHECK] HWID Uyuşmazlığı! Engellendi -> Kayıtlı: ${keyData.hwid}, Gelen: ${hwid}`);
         return res.send('error: hwid mismatch');
     }
 
     return res.send('success');
 });
 
-// Telegram /start Komutu ve Buton Dizilimi
+// Telegram /start Komutu
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
@@ -89,7 +85,7 @@ bot.on('message', async (msg) => {
     }
 });
 
-// Butona Basıldığında Key Üretme Mantığı
+// Telegram Butonlarına Basıldığında Key Üretme
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
@@ -103,27 +99,27 @@ bot.on('callback_query', async (query) => {
     switch (data) {
         case 'bir_dakika':
             generatedKey = 'STARBABA-1DK-' + randomStr;
-            durationMs = 60 * 1000; // Tam 1 Dakika
+            durationMs = 60 * 1000; // Kesin 1 Dakika (60.000 ms)
             durationText = '1 Dakika (Test)';
             break;
         case 'saatlik':
             generatedKey = 'STARBABA-SAAT-' + randomStr;
-            durationMs = 60 * 60 * 1000;
+            durationMs = 60 * 60 * 1000; // 1 Saat
             durationText = '1 Saat';
             break;
         case 'gunluk':
             generatedKey = 'STARBABA-GUN-' + randomStr;
-            durationMs = 24 * 60 * 60 * 1000;
+            durationMs = 24 * 60 * 60 * 1000; // 1 Gün
             durationText = '1 Gün';
             break;
         case 'haftalik':
             generatedKey = 'STARBABA-HAFTA-' + randomStr;
-            durationMs = 7 * 24 * 60 * 60 * 1000;
+            durationMs = 7 * 24 * 60 * 60 * 1000; // 1 Hafta
             durationText = '1 Hafta';
             break;
         case 'aylik':
             generatedKey = 'STARBABA-AY-' + randomStr;
-            durationMs = 30 * 24 * 60 * 60 * 1000;
+            durationMs = 30 * 24 * 60 * 60 * 1000; // 1 Ay
             durationText = '1 Ay';
             break;
         case 'sinirsiz':
@@ -132,21 +128,22 @@ bot.on('callback_query', async (query) => {
             durationText = 'Sınırsız';
             break;
         case 'free_1000':
-            generatedKey = 'STARBABA-1000-CIHAZ-' + randomStr;
-            durationMs = 24 * 60 * 60 * 1000;
+            generateKey = 'STARBABA-1000-CIHAZ-' + randomStr;
+            durationMs = 24 * 60 * 60 * 1000; // 1 Gün
             durationText = 'Free 1000 Cihaz (1 Gün)';
             break;
     }
 
-    // Key'i ve bitiş süresini belleğe kaydet
+    // Süreyi ve bitiş zamanını kesin olarak kaydet
+    const expirationTime = Date.now() + durationMs;
     activeKeys[generatedKey] = {
-        expiresAt: Date.now() + durationMs,
+        expiresAt: expirationTime,
         hwid: null
     };
 
-    console.log(`[GENERATE] Yeni key üretildi: ${generatedKey} (${durationText}) - Bitiş: ${new Date(activeKeys[generatedKey].expiresAt).toLocaleTimeString()}`);
+    console.log(`[YENİ KEY ÜRETİLDİ] Key: ${generatedKey} | Tür: ${durationText} | Bitiş MS: ${expirationTime}`);
 
-    bot.sendMessage(chatId, `✅ Yeni Key Üretildi (${durationText}):\n\n<code>${generatedKey}</code>\n\nSüresi bittiğinde sistem otomatik olarak erişimi kesecektir!`, { parse_mode: 'HTML' });
+    bot.sendMessage(chatId, `✅ Yeni Key Üretildi (${durationText}):\n\n<code>${generatedKey}</code>\n\nSüresi bittiğinde panelden otomatik silinecektir!`, { parse_mode: 'HTML' });
     bot.answerCallbackQuery(query.id);
 });
 
