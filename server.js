@@ -21,23 +21,27 @@ app.get('/', (req, res) => {
 
 // Lua / Oyun Tarafından Lisans Sorgulama (GET)
 app.get('/check', (req, res) => {
-    const key = req.query.key;
-    const hwid = req.query.hwid;
+    const key = req.query.key ? req.query.key.trim() : '';
+    const hwid = req.query.hwid ? req.query.hwid.trim() : '';
 
     if (!key) {
+        console.log('[CHECK] Uyarı: Key sağlanmadı.');
         return res.send('error: no key provided');
     }
 
+    const keyData = activeKeys[key];
+
     // Key veritabanında yoksa veya süresi dolup silindiyse
-    if (!activeKeys[key]) {
+    if (!keyData) {
+        console.log(`[CHECK] Geçersiz veya süresi dolmuş key denemesi: ${key}`);
         return res.send('error: expired');
     }
 
-    const keyData = activeKeys[key];
     const now = Date.now();
 
-    // Süre doldu mu kontrolü
+    // Süre doldu mu kesin kontrolü
     if (now > keyData.expiresAt) {
+        console.log(`[CHECK] Süresi dolan key imha ediliyor: ${key}`);
         delete activeKeys[key]; // Hafızadan tamamen kazı
         return res.send('error: expired');
     }
@@ -45,7 +49,9 @@ app.get('/check', (req, res) => {
     // HWID Eşleştirme Koruması
     if (!keyData.hwid && hwid && hwid !== 'UNKNOWN_DEV') {
         keyData.hwid = hwid;
+        console.log(`[CHECK] HWID eşleştirildi - Key: ${key}, HWID: ${hwid}`);
     } else if (keyData.hwid && hwid && keyData.hwid !== hwid && hwid !== 'UNKNOWN_DEV') {
+        console.log(`[CHECK] HWID Uyuşmazlığı! Kayıtlı: ${keyData.hwid}, Gelen: ${hwid}`);
         return res.send('error: hwid mismatch');
     }
 
@@ -54,14 +60,15 @@ app.get('/check', (req, res) => {
 
 // Lisans Sorgulama (POST Alternatifi)
 app.post('/', (req, res) => {
-    const key = req.body.key || req.query.key;
-    const hwid = req.body.hwid || req.query.hwid;
+    const key = (req.body.key || req.query.key || '').trim();
+    const hwid = (req.body.hwid || req.query.hwid || '').trim();
 
     if (!key || !activeKeys[key]) {
         return res.status(401).send('error: expired');
     }
 
-    if (Date.now() > activeKeys[key].expiresAt) {
+    const keyData = activeKeys[key];
+    if (Date.now() > keyData.expiresAt) {
         delete activeKeys[key];
         return res.status(401).send('error: expired');
     }
@@ -86,7 +93,7 @@ bot.on('message', async (msg) => {
                 ]
             }
         };
-        bot.sendMessage(chatId, ' STARBABA KEY PANELİNE HOŞ GELDİNİZ\n\nİstediğiniz key türünü aşağıdaki butonlardan seçebilirsiniz:', keyboard);
+        bot.sendMessage(chatId, '⭐ STARBABA KEY PANELİNE HOŞ GELDİNİZ\n\nİstediğiniz key türünü aşağıdaki butonlardan seçebilirsiniz:', keyboard);
     }
 });
 
@@ -144,6 +151,8 @@ bot.on('callback_query', async (query) => {
         expiresAt: Date.now() + durationMs,
         hwid: null
     };
+
+    console.log(`[GENERATE] Yeni key üretildi: ${generatedKey} (${durationText})`);
 
     bot.sendMessage(chatId, `✅ Yeni Key Üretildi (${durationText}):\n\n<code>${generatedKey}</code>\n\nSüresi bittiğinde sistem otomatik olarak erişimi kesecektir!`, { parse_mode: 'HTML' });
     bot.answerCallbackQuery(query.id);
