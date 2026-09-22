@@ -4,7 +4,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const PORT = process.env.PORT || 10000;
 const app = express();
 
-// BotFather'dan aldığın yeni token
+// BotFather'dan aldığın token
 const token = '8600379958:AAEXZ7r9tFjyxubL7cRQSLMqhoPDZpl6Hfg';
 const bot = new TelegramBot(token, { polling: true });
 
@@ -14,12 +14,14 @@ app.use(express.urlencoded({ extended: true }));
 // Key Veritabanı Bellek Deposu
 let activeKeys = {};
 
-// Panel Ana Sayfası (Tarayıcıdan girip tüm keylerin durumunu, kalan süresini ve HWID'sini görürsün)
+// Panel Ana Sayfası (Artık boş olsa bile hata vermez, tabloyu gösterir)
 app.get('/', (req, res) => {
     let html = `<h2>STARBABA Admin Panel</h2><table border="1" cellpadding="5"><tr><th>Key</th><th>Süre (Saniye)</th><th>Kalan Süre</th><th>HWID</th><th>Durum</th></tr>`;
     let now = Math.floor(Date.now() / 1000);
+    let count = 0;
 
     for (let k in activeKeys) {
+        count++;
         let item = activeKeys[k];
         let remaining = "Başlamadı";
         if (item.firstUsedAt && item.duration > 0) {
@@ -29,11 +31,14 @@ app.get('/', (req, res) => {
         }
         html += `<tr><td>${k}</td><td>${item.duration}</td><td>${remaining}</td><td>${item.hwid || 'Boş'}</td><td>${item.status}</td></tr>`;
     }
+    if (count === 0) {
+        html += `<tr><td colspan="5" align="center">Henüz aktif key yok. Telegram botundan key üretin.</td></tr>`;
+    }
     html += `</table>`;
     res.send(html);
 });
 
-// ⚡ LİSANS KONTROL API (Lua scriptin buraya bağlanıp sorgu atar)
+// ⚡ LİSANS KONTROL API (Lua scriptin buraya bağlanır)
 app.get('/check', (req, res) => {
     let key = req.query.key ? req.query.key.trim() : '';
     let hwid = req.query.hwid ? req.query.hwid.trim() : '';
@@ -72,7 +77,23 @@ app.get('/check', (req, res) => {
     return res.send('success');
 });
 
-// 🛠️ YÖNETİM KOMUTLARI (Tarayıcıdan veya linkle kolayca yönetmek için)
+// Tarayıcıdan kolayca test key'i üretmek için: /create?key=TEST123&duration=86400
+app.get('/create', (req, res) => {
+    let key = req.query.key;
+    let duration = parseInt(req.query.duration) || 86400;
+    if (!key) return res.send('Key belirtin! Örnek: /create?key=STARBABA-TEST-123&duration=86400');
+
+    activeKeys[key] = {
+        duration: duration,
+        createdAt: Math.floor(Date.now() / 1000),
+        firstUsedAt: null,
+        hwid: null,
+        status: 'active'
+    };
+    res.send(`OK: ${key} başarıyla oluşturuldu! Süre: ${duration} saniye.`);
+});
+
+// YÖNETİM KOMUTLARI
 app.get('/reset', (req, res) => {
     let key = req.query.key;
     if (activeKeys[key]) {
@@ -91,20 +112,11 @@ app.get('/ban', (req, res) => {
     res.send('Key bulunamadı!');
 });
 
-app.get('/unban', (req, res) => {
-    let key = req.query.key;
-    if (activeKeys[key]) {
-        activeKeys[key].status = 'active';
-        return res.send(`OK: ${key} unbanlandı.`);
-    }
-    res.send('Key bulunamadı!');
-});
-
 app.get('/delete', (req, res) => {
     let key = req.query.key;
     if (activeKeys[key]) {
         delete activeKeys[key];
-        return res.send(`OK: ${key} sistemden tamamen silindi.`);
+        return res.send(`OK: ${key} sistemden silindi.`);
     }
     res.send('Key bulunamadı!');
 });
@@ -136,27 +148,27 @@ bot.on('callback_query', async (query) => {
     switch (data) {
         case '1dk':
             prefix = 'STARBABA-1DK-';
-            durationSeconds = 60; // 60 Saniye
+            durationSeconds = 60;
             break;
         case 'saat':
             prefix = 'STARBABA-SAAT-';
-            durationSeconds = 3600; // 1 Saat
+            durationSeconds = 3600;
             break;
         case 'gun':
             prefix = 'STARBABA-GUN-';
-            durationSeconds = 86400; // 1 Gün
+            durationSeconds = 86400;
             break;
         case 'hafta':
             prefix = 'STARBABA-HAFTA-';
-            durationSeconds = 604800; // 1 Hafta
+            durationSeconds = 604800;
             break;
         case 'ay':
             prefix = 'STARBABA-AY-';
-            durationSeconds = 2592000; // 1 Ay
+            durationSeconds = 2592000;
             break;
         case 'sinirsiz':
             prefix = 'STARBABA-VIP-';
-            durationSeconds = 0; // Sınırsız
+            durationSeconds = 0;
             break;
     }
 
