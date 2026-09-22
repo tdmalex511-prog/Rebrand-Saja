@@ -4,8 +4,8 @@ const TelegramBot = require('node-telegram-bot-api');
 const PORT = process.env.PORT || 10000;
 const app = express();
 
-// 🔥 Buraya BotFather'dan aldığın güncel token'ı yaz (veya env'den al)
-const token = process.env.BOT_TOKEN || 'BURAYA_BOT_TOKENINI_YAZ';
+// BotFather'dan aldığın yeni token
+const token = '8600379958:AAEXZ7r9tFjyxubL7cRQSLMqhoPDZpl6Hfg';
 const bot = new TelegramBot(token, { polling: true });
 
 app.use(express.json());
@@ -14,6 +14,7 @@ app.use(express.urlencoded({ extended: true }));
 // Key Veritabanı Bellek Deposu
 let activeKeys = {};
 
+// Panel Ana Sayfası (Tarayıcıdan girip tüm keylerin durumunu, kalan süresini ve HWID'sini görürsün)
 app.get('/', (req, res) => {
     let html = `<h2>STARBABA Admin Panel</h2><table border="1" cellpadding="5"><tr><th>Key</th><th>Süre (Saniye)</th><th>Kalan Süre</th><th>HWID</th><th>Durum</th></tr>`;
     let now = Math.floor(Date.now() / 1000);
@@ -32,7 +33,7 @@ app.get('/', (req, res) => {
     res.send(html);
 });
 
-// ⚡ LİSANS KONTROL API (Lua Buraya Sorar)
+// ⚡ LİSANS KONTROL API (Lua scriptin buraya bağlanıp sorgu atar)
 app.get('/check', (req, res) => {
     let key = req.query.key ? req.query.key.trim() : '';
     let hwid = req.query.hwid ? req.query.hwid.trim() : '';
@@ -47,7 +48,7 @@ app.get('/check', (req, res) => {
 
     let now = Math.floor(Date.now() / 1000);
 
-    // İlk kullanım anı ve süreyi başlatma
+    // İlk kullanım anını kaydet ve süreyi o an başlat
     if (!keyData.firstUsedAt) {
         keyData.firstUsedAt = now;
     }
@@ -61,7 +62,7 @@ app.get('/check', (req, res) => {
         }
     }
 
-    // HWID Kilitleme
+    // HWID Cihaz Kilitleme
     if (!keyData.hwid && hwid && hwid !== 'UNKNOWN_DEV') {
         keyData.hwid = hwid;
     } else if (keyData.hwid && hwid && keyData.hwid !== hwid && hwid !== 'UNKNOWN_DEV') {
@@ -71,12 +72,12 @@ app.get('/check', (req, res) => {
     return res.send('success');
 });
 
-// 🛠️ YÖNETİM KOMUTLARI (Reset, Ban, Unban, Sil)
+// 🛠️ YÖNETİM KOMUTLARI (Tarayıcıdan veya linkle kolayca yönetmek için)
 app.get('/reset', (req, res) => {
     let key = req.query.key;
     if (activeKeys[key]) {
         activeKeys[key].hwid = null;
-        return res.send(`OK: ${key} HWID sıfırlandı.`);
+        return res.send(`OK: ${key} için HWID sıfırlandı.`);
     }
     res.send('Key bulunamadı!');
 });
@@ -103,12 +104,12 @@ app.get('/delete', (req, res) => {
     let key = req.query.key;
     if (activeKeys[key]) {
         delete activeKeys[key];
-        return res.send(`OK: ${key} silindi.`);
+        return res.send(`OK: ${key} sistemden tamamen silindi.`);
     }
     res.send('Key bulunamadı!');
 });
 
-// TELEGRAM BOT BUTON YÖNETİMİ
+// TELEGRAM BOT /START VE BUTON YÖNETİMİ
 bot.on('message', async (msg) => {
     if (msg.text === '/start') {
         const keyboard = {
@@ -135,23 +136,23 @@ bot.on('callback_query', async (query) => {
     switch (data) {
         case '1dk':
             prefix = 'STARBABA-1DK-';
-            durationSeconds = 60; // Tam 60 Saniye
+            durationSeconds = 60; // 60 Saniye
             break;
         case 'saat':
             prefix = 'STARBABA-SAAT-';
-            durationSeconds = 3600;
+            durationSeconds = 3600; // 1 Saat
             break;
         case 'gun':
             prefix = 'STARBABA-GUN-';
-            durationSeconds = 86400;
+            durationSeconds = 86400; // 1 Gün
             break;
         case 'hafta':
             prefix = 'STARBABA-HAFTA-';
-            durationSeconds = 604800;
+            durationSeconds = 604800; // 1 Hafta
             break;
         case 'ay':
             prefix = 'STARBABA-AY-';
-            durationSeconds = 2592000;
+            durationSeconds = 2592000; // 1 Ay
             break;
         case 'sinirsiz':
             prefix = 'STARBABA-VIP-';
