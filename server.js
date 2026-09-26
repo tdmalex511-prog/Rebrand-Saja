@@ -19,7 +19,6 @@ if (!fs.existsSync(DB_FILE)) {
     fs.writeFileSync(DB_FILE, JSON.stringify({}));
 }
 
-// Veritabanını okuma/yazma yardımcıları
 function getDB() {
     try {
         const data = fs.readFileSync(DB_FILE);
@@ -33,10 +32,11 @@ function saveDB(data) {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 }
 
-// Süre hesaplama fonksiyonu (milisaniye cinsinden)
+// Süre hesaplama fonksiyonu
 function calculateExpiry(durationStr) {
     const now = new Date().getTime();
     switch (durationStr) {
+        case '1m': return now + (60 * 1000);                  // 1 Dakika
         case '1h': return now + (60 * 60 * 1000);              // 1 Saat
         case '1d': return now + (24 * 60 * 60 * 1000);         // 1 Gün
         case '7d': return now + (7 * 24 * 60 * 60 * 1000);     // 7 Gün (Haftalık)
@@ -60,12 +60,10 @@ app.get('/api/check', (req, res) => {
         return res.json({ status: 'unauthorized', message: 'Key bulunamadı!' });
     }
 
-    // Sınırsız kontrolü
     if (license.expires_at === 'lifetime') {
         return res.json({ status: 'active', type: 'lifetime' });
     }
 
-    // Süre kontrolü
     const now = new Date().getTime();
     if (now < license.expires_at) {
         return res.json({ status: 'active', expires_at: license.expires_at });
@@ -75,7 +73,6 @@ app.get('/api/check', (req, res) => {
 });
 
 // --- 2. TELEGRAM BOTU YÖNETİMİ ---
-// Geçici olarak kullanıcıların süre seçimlerini tutmak için hafıza nesnesi
 const userState = {};
 
 bot.on('message', (msg) => {
@@ -83,68 +80,72 @@ bot.on('message', (msg) => {
     const text = msg.text ? msg.text.trim() : '';
 
     if (text === '/start') {
-        return bot.sendMessage(chatId, "Hoş geldin! Lisans vermek istediğin kullanıcının **Device ID**'sini gönder.");
-    }
-
-    // Eğer kullanıcı bir ID gönderdiyse (Boşluksuz ve genelde uzun bir metindir)
-    if (text.length > 10 && !text.startsWith('/')) {
-        userState[chatId] = { target_device: text };
-        
-        // Süre seçim butonları gönderiliyor
         const opts = {
             reply_markup: {
                 inline_keyboard: [
+                    [{ text: '⚡ 1 Dakikalık Key Üret', callback_data: 'dur_1m' }],
                     [
-                        { text: '⏱ Saatlik', callback_data: 'dur_1h' },
-                        { text: '📅 Günlük', callback_data: 'dur_1d' }
+                        { text: '⏱ Saatlik Key Üret', callback_data: 'dur_1h' },
+                        { text: '📅 Günlük Key Üret', callback_data: 'dur_1d' }
                     ],
                     [
-                        { text: '📆 Haftalık', callback_data: 'dur_7d' },
-                        { text: '🗓 Aylık', callback_data: 'dur_30d' }
+                        { text: '📆 Haftalık Key Üret', callback_data: 'dur_7d' },
+                        { text: '🗓 Aylık Key Üret', callback_data: 'dur_30d' }
                     ],
-                    [
-                        { text: '♾ Sınırsız (Lifetime)', callback_data: 'dur_lifetime' }
-                    ]
+                    [{ text: '♾ Sınırsız Key Üret', callback_data: 'dur_lifetime' }],
+                    [{ text: '📋 Aktif Keyleri Listele', callback_data: 'list_keys' }]
                 ]
             }
         };
-        return bot.sendMessage(chatId, `Cihaz ID alındı: \`${text}\`\nLütfen lisans süresini seçin:`, { parse_mode: 'Markdown', ...opts });
+        return bot.sendMessage(chatId, "⭐ Starbaba Yönetim Paneline Hoş Geldiniz.\n\nAşağıdan key üretebilir veya yönetebilirsiniz:", opts);
+    }
+
+    // Kullanıcı bir Device ID gönderdiğinde
+    if (text.length > 10 && !text.startsWith('/')) {
+        if (!userState[chatId] || !userState[chatId].selected_duration) {
+            return bot.sendMessage(chatId, "⚠️ Önce menüden hangi süreyle key üretmek istediğini seçmelisin!");
+        }
+
+        const durationKey = userState[chatId].selected_duration;
+        const expiryTime = calculateExpiry(durationKey);
+
+        const db = getDB();
+        db[text] = {
+            expires_at: expiryTime,
+            created_at: new Date().getTime()
+        };
+        saveDB(db);
+
+        delete userState[chatId];
+        return bot.sendMessage(chatId, `✅ **Başarılı!**\n\nCihaz ID: \`${text}\`\nSüre: **${durationKey.toUpperCase()}** olarak tanımlandı.`, { parse_mode: 'Markdown' });
     }
 });
 
-// Butona basıldığında süreyi kaydetme
+// Butonlara basıldığında çalışacak kısım
 bot.on('callback_query', (query) => {
     const chatId = query.message.chat.id;
-    const data = query.data; // örn: dur_1d, dur_30d vb.
+    const data = query.data;
 
-    if (!userState[chatId] || !userState[chatId].target_device) {
-        return bot.answerCallbackQuery(query.id, { text: 'İşlem zaman aşımına uğradı, tekrar ID gönder.' });
+    if (data === 'list_keys') {
+        const db = getDB();
+        const keys = Object.keys(db);
+        if (keys.length === 0) {
+            return bot.answerCallbackQuery(query.id, { text: 'Hiç aktif key bulunmuyor!' });
+        }
+        let msgText = "📋 **Aktif Cihaz ID'leri:**\n\n";
+        keys.forEach((k, index) => {
+            msgText += `${index + 1}. \`${k}\`\n`;
+        });
+        return bot.sendMessage(chatId, msgText, { parse_mode: 'Markdown' });
     }
 
-    const deviceId = userState[chatId].target_device;
-    const durationKey = data.replace('dur_', '');
-    const expiryTime = calculateExpiry(durationKey);
+    if (data.startsWith('dur_')) {
+        const durationKey = data.replace('dur_', '');
+        userState[chatId] = { selected_duration: durationKey };
 
-    if (!expiryTime) {
-        return bot.answerCallbackQuery(query.id, { text: 'Geçersiz süre!' });
+        bot.answerCallbackQuery(query.id, { text: `Süre seçildi: ${durationKey}. Şimdi Device ID gönder!` });
+        return bot.sendMessage(chatId, `📌 **${durationKey.toUpperCase()}** türünde key seçildi.\n\nŞimdi müşterinin gönderdiği **Device ID**'yi buraya yapıştırıp gönder:`, { parse_mode: 'Markdown' });
     }
-
-    // Veritabanına kaydet
-    const db = getDB();
-    db[deviceId] = {
-        expires_at: expiryTime,
-        created_at: new Date().getTime()
-    };
-    saveDB(db);
-
-    delete userState[chatId];
-
-    bot.answerCallbackQuery(query.id, { text: 'Lisans başarıyla tanımlandı!' });
-    bot.editMessageText(`✅ **Başarılı!**\n\nCihaz ID: \`${deviceId}\`\nSüre: **${durationKey.toUpperCase()}** olarak tanımlandı.`, {
-        chat_id: chatId,
-        message_id: query.message.message_id,
-        parse_mode: 'Markdown'
-    });
 });
 
 app.listen(PORT, () => {
