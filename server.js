@@ -1,166 +1,356 @@
-const http = require('http');
-const https = require('https');
+const express = require('express');
+const cookieParser = require('cookie-parser');
 const fs = require('fs');
+const path = require('path');
 
-const TOKEN = 'TELEGRAM_BOT_TOKENINIZI_BURAYA_YAZIN'; // Bot tokenini buraya yaz
+const app = express();
 const PORT = process.env.PORT || 3000;
-const DB_FILE = './licenses.json';
+const DB_FILE = path.join(__dirname, 'keys.json');
 
-if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify({}));
-}
+const ADMIN_USER = "starbaba511";
+const ADMIN_PASS = "starbaba511511";
 
-function getDB() {
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(cookieParser());
+
+// Veritabanı Yükleme / Kaydetme Fonksiyonları
+function getKeys() {
+    if (!fs.existsSync(DB_FILE)) {
+        fs.writeFileSync(DB_FILE, JSON.stringify({}, null, 4));
+    }
     try {
-        return JSON.parse(fs.readFileSync(DB_FILE));
+        const data = fs.readFileSync(DB_FILE, 'utf8');
+        return JSON.parse(data);
     } catch (e) {
         return {};
     }
 }
 
-function saveDB(data) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+function saveKeys(keys) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(keys, null, 4));
 }
 
-function calculateExpiry(type) {
-    const now = Date.now();
-    switch (type) {
-        case '1m': return now + (60 * 1000);
-        case '1h': return now + (60 * 60 * 1000);
-        case '1d': return now + (24 * 60 * 60 * 1000);
-        case '7d': return now + (7 * 24 * 60 * 60 * 1000);
-        case '30d': return now + (30 * 24 * 60 * 60 * 1000);
-        case 'lifetime': return 'lifetime';
-        default: return null;
-    }
-}
+// 1. API KONTROLÜ (Lua oyun scriptinden gelen istekler için)
+app.get('/', (req, res, next) => {
+    if (req.query.api_check !== undefined) {
+        const keys = getKeys();
+        const incomingKey = req.query.key || '';
+        const incomingHwid = req.query.hwid || '';
+        const currentTime = Math.floor(Date.now() / 1000);
 
-const userState = {};
-
-// Telegram'a istek atma fonksiyonu
-function telegramApi(method, data) {
-    return new Promise((resolve, reject) => {
-        const body = JSON.stringify(data);
-        const req = https.request({
-            hostname: 'api.telegram.org',
-            path: `/bot${TOKEN}/${method}`,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(body)
-            }
-        }, (res) => {
-            let resData = '';
-            res.on('data', chunk => resData += chunk);
-            res.on('end', () => resolve(JSON.parse(resData)));
-        });
-        req.on('error', err => reject(err));
-        req.write(body);
-        req.end();
-    });
-}
-
-// Web Server ve API / Telegram Webhook Dinleyicisi
-const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, `http://${req.headers.host}`);
-
-    // Lua Scripti İçin Lisans Kontrol API'si
-    if (url.pathname === '/api/check') {
-        const deviceId = url.searchParams.get('device');
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        if (!deviceId) {
-            return res.end(JSON.stringify({ status: 'error', message: 'Device ID gereklidir.' }));
+        if (!keys[incomingKey]) {
+            return res.json({ status: "error", message: "Geçersiz Key!" });
         }
 
-        const db = getDB();
-        const license = db[deviceId];
+        let kdata = keys[incomingKey];
 
-        if (!license) {
-            return res.end(JSON.stringify({ status: 'unauthorized', message: 'Key bulunamadı!' }));
+        if (kdata.status === 'Banlı') {
+            return res.json({ status: "error", message: "Bu Key Banlanmıştır!" });
         }
 
-        if (license.expires_at === 'lifetime' || Date.now() < license.expires_at) {
-            return res.end(JSON.stringify({ status: 'active' }));
+        if (kdata.type !== 'unlimited' && kdata.expires_at && currentTime > kdata.expires_at) {
+            return res.json({ status: "error", message: "Key Süresi Dolmuş!" });
+        }
+
+        const allowedDevices = parseInt(kdata.max_devices || 1);
+        if (!kdata.hwid_list) {
+            kdata.hwid_list = kdata.hwid ? [kdata.hwid] : [];
+        }
+
+        if (kdata.hwid_list.includes(incomingHwid)) {
+            return res.json({ status: "success", message: "Giriş Başarılı!" });
         } else {
-            return res.end(JSON.stringify({ status: 'expired' }));
+            if (kdata.hwid_list.length < allowedDevices) {
+                kdata.hwid_list.push(incomingHwid);
+                if (!kdata.expires_at && kdata.type !== 'unlimited') {
+                    kdata.expires_at = currentTime + kdata.duration;
+                }
+                keys[incomingKey] = kdata;
+                saveKeys(keys);
+                return res.json({ status: "success", message: "Cihaz başarıyla eklendi!" });
+            } else {
+                return res.json({ status: "error", message: "Maksimum cihaz sınırına ulaşıldı!" });
+            }
         }
     }
-
-    // Telegram Bot Gelen Mesajlar (Webhook)
-    if (req.method === 'POST' && url.pathname === '/webhook') {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', async () => {
-            try {
-                const update = JSON.parse(body);
-                
-                if (update.message) {
-                    const chatId = update.message.chat.id;
-                    const text = update.message.text ? update.message.text.trim() : '';
-
-                    if (text === '/start') {
-                        await telegramApi('sendMessage', {
-                            chat_id: chatId,
-                            text: "⭐ Starbaba Yönetim Paneline Hoş Geldiniz.\n\nAşağıdan key üretebilir veya yönetebilirsiniz:",
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '⚡ 1 Dakikalık Key Üret', callback_data: 'dur_1m' }],
-                                    [
-                                        { text: '⏱ Saatlik Key Üret', callback_data: 'dur_1h' },
-                                        { text: '📅 Günlük Key Üret', callback_data: 'dur_1d' }
-                                    ],
-                                    [
-                                        { text: '📆 Haftalık Key Üret', callback_data: 'dur_7d' },
-                                        { text: '🗓 Aylık Key Üret', callback_data: 'dur_30d' }
-                                    ],
-                                    [{ text: '♾ Sınırsız Key Üret', callback_data: 'dur_lifetime' }],
-                                    [{ text: '📋 Aktif Keyleri Listele', callback_data: 'list_keys' }]
-                                ]
-                            }
-                        });
-                    } else if (text.length > 10 && !text.startsWith('/')) {
-                        if (!userState[chatId] || !userState[chatId].selected_duration) {
-                            await telegramApi('sendMessage', { chat_id: chatId, text: "⚠️ Önce menüden hangi süreyle key üretmek istediğini seçmelisin!" });
-                        } else {
-                            const durationKey = userState[chatId].selected_duration;
-                            const expiryTime = calculateExpiry(durationKey);
-                            const db = getDB();
-                            db[text] = { expires_at: expiryTime, created_at: Date.now() };
-                            saveDB(db);
-                            delete userState[chatId];
-                            await telegramApi('sendMessage', { chat_id: chatId, text: `✅ **Başarılı!**\n\nCihaz ID: \`${text}\`\nSüre: **${durationKey.toUpperCase()}** olarak tanımlandı.`, parse_mode: 'Markdown' });
-                        }
-                    }
-                } else if (update.callback_query) {
-                    const q = update.callback_query;
-                    const chatId = q.message.chat.id;
-                    const data = q.data;
-
-                    if (data === 'list_keys') {
-                        const db = getDB();
-                        const keys = Object.keys(db);
-                        let msgText = keys.length === 0 ? "Hiç aktif key yok." : "📋 **Aktif Cihaz ID'leri:**\n\n" + keys.map((k, i) => `${i + 1}. \`${k}\``).join('\n');
-                        await telegramApi('sendMessage', { chat_id: chatId, text: msgText, parse_mode: 'Markdown' });
-                    } else if (data.startsWith('dur_')) {
-                        const durationKey = data.replace('dur_', '');
-                        userState[chatId] = { selected_duration: durationKey };
-                        await telegramApi('sendMessage', { chat_id: chatId, text: `📌 **${durationKey.toUpperCase()}** seçildi. Şimdi müşterinin **Device ID**'sini buraya gönder:` });
-                    }
-                    await telegramApi('answerCallbackQuery', { callback_query_id: q.id });
-                }
-            } catch (e) {
-                console.error(e);
-            }
-            res.writeHead(200);
-            res.end('OK');
-        });
-        return;
-    }
-
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Starbaba Server is Running!');
+    next();
 });
 
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+// Çıkış İşlemi
+app.get('/logout', (req, res) => {
+    res.clearCookie('admin_logged');
+    res.redirect('/');
+});
+
+// Giriş İşlemi (POST)
+app.post('/login', (req, res) => {
+    const { username, password } = req.body;
+    if (username === ADMIN_USER && password === ADMIN_PASS) {
+        res.cookie('admin_logged', 'true', { maxAge: 86400000, httpOnly: true });
+        res.redirect('/');
+    } else {
+        res.redirect('/?error=Hatalı+kullanıcı+adı+veya+şifre');
+    }
+});
+
+// Panel İşlemleri (Key Üretme ve Yönetim)
+app.post('/action', (req, res) => {
+    const isLogged = req.cookies.admin_logged === 'true';
+    if (!isLogged) return res.redirect('/');
+
+    let keys = getKeys();
+    const { create_key, action, target_key } = req.body;
+
+    if (create_key !== undefined) {
+        const type = req.body.key_type;
+        const category = req.body.category;
+        let maxDevices = parseInt(req.body.max_devices) || 1;
+        if (maxDevices < 1) maxDevices = 1;
+
+        const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
+        let prefix = "STAR_";
+        if (category === 'FREE') {
+            prefix += "free_";
+        } else {
+            if (type === 'day') prefix += "day_";
+            else if (type === 'week') prefix += "week_";
+            else if (type === 'month') prefix += "month_";
+            else if (type === 'seasonal') prefix += "seasonal_";
+            else if (type === 'unlimited') prefix += "unl_";
+        }
+
+        const newKey = prefix + randomStr;
+        let duration = 86400;
+        if (type === 'week') duration = 604800;
+        else if (type === 'month') duration = 2592000;
+        else if (type === 'seasonal') duration = 7776000;
+        else if (type === 'unlimited') duration = 999999999;
+
+        keys[newKey] = {
+            key: newKey,
+            category: category,
+            type: type,
+            status: 'Aktif',
+            max_devices: maxDevices,
+            hwid_list: [],
+            created_at: Math.floor(Date.now() / 1000),
+            duration: duration,
+            expires_at: 0
+        };
+        saveKeys(keys);
+    } else if (action && target_key && keys[target_key]) {
+        if (action === 'delete') {
+            delete keys[target_key];
+        } else if (action === 'ban') {
+            keys[target_key].status = 'Banlı';
+        } else if (action === 'unban') {
+            keys[target_key].status = 'Aktif';
+        } else if (action === 'reset_hwid') {
+            keys[target_key].hwid_list = [];
+            keys[target_key].expires_at = 0;
+        }
+        saveKeys(keys);
+    }
+    res.redirect('/');
+});
+
+// 2. WEB PANEL ARAYÜZÜ
+app.get('/', (req, res) => {
+    const isLogged = req.cookies.admin_logged === 'true';
+    const errorMsg = req.query.error || '';
+
+    if (!isLogged) {
+        return res.send(`
+            <!DOCTYPE html>
+            <html lang="tr">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>STARBABA - Giriş Yap</title>
+                <style>
+                    * { box-sizing: border-box; }
+                    body { background: #0f172a; color: #f8fafc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+                    .login-card { background: #1e293b; padding: 40px 30px; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.7); width: 100%; max-width: 420px; }
+                    h2 { text-align: center; margin-bottom: 25px; color: #38bdf8; font-size: 26px; }
+                    input { width: 100%; padding: 14px; margin: 12px 0; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 8px; font-size: 16px; }
+                    button { width: 100%; padding: 14px; background: #38bdf8; border: none; color: #0f172a; font-weight: bold; border-radius: 8px; cursor: pointer; margin-top: 15px; font-size: 16px; }
+                    button:hover { background: #0ea5e9; }
+                    .error { color: #f87171; text-align: center; font-size: 14px; margin-bottom: 10px; font-weight: bold; }
+                </style>
+            </head>
+            <body>
+                <div class="login-card">
+                    <h2>STARBABA PANEL</h2>
+                    ${errorMsg ? `<div class="error">${errorMsg}</div>` : ''}
+                    <form method="POST" action="/login">
+                        <input type="text" name="username" placeholder="Kullanıcı Adı" required>
+                        <input type="password" name="password" placeholder="Şifre" required>
+                        <button type="submit">Giriş Yap</button>
+                    </form>
+                </div>
+            </body>
+            </html>
+        `);
+    }
+
+    const keys = getKeys();
+    const currentTime = Math.floor(Date.now() / 1000);
+    let tableRows = '';
+    const reversedKeys = Object.keys(keys).reverse();
+
+    if (reversedKeys.length === 0) {
+        tableRows = `<tr><td colspan="7" style="text-align: center; color: #94a3b8;">Henüz key yok.</td></tr>`;
+    } else {
+        reversedKeys.forEach(k => {
+            const data = keys[k];
+            const category = data.category || 'VIP';
+            const catBadge = category === 'VIP' ? 'badge-vip' : 'badge-free';
+            const statusBadge = data.status === 'Aktif' ? 'badge-active' : 'badge-banned';
+            const maxDev = data.max_devices || 1;
+            const hwidList = data.hwid_list || [];
+            
+            let timeText = "Kullanılmadı";
+            if (data.type === 'unlimited') {
+                timeText = "Sınırsız";
+            } else if (data.expires_at) {
+                const left = data.expires_at - currentTime;
+                timeText = left > 0 ? Math.floor(left / 3600) + " Saat" : "<span style='color:#f87171'>Bitti</span>";
+            }
+
+            tableRows += `
+                <tr>
+                    <td><strong class="clickable-key" onclick="copyKey('${data.key}')" title="Kopyala">${data.key}</strong></td>
+                    <td><span class="badge ${catBadge}">${category}</span></td>
+                    <td>${data.type.toUpperCase()}</td>
+                    <td><span class="badge ${statusBadge}">${data.status}</span></td>
+                    <td>${hwidList.length} / ${maxDev}</td>
+                    <td>${timeText}</td>
+                    <td>
+                        <form method="POST" action="/action" style="display:inline;">
+                            <input type="hidden" name="target_key" value="${data.key}">
+                            ${data.status === 'Aktif' ? 
+                                `<button type="submit" name="action" value="ban" class="btn-action btn-ban">Ban</button>` : 
+                                `<button type="submit" name="action" value="unban" class="btn-action btn-unban">Aç</button>`
+                            }
+                            <button type="submit" name="action" value="reset_hwid" class="btn-action btn-reset" onclick="return confirm('Sıfırlansın mı?');">Reset</button>
+                            <button type="submit" name="action" value="delete" class="btn-action btn-del" onclick="return confirm('Silinsin mi?');">Sil</button>
+                        </form>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="tr">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>STARBABA - Yönetim Paneli</title>
+            <style>
+                body { background: #0f172a; color: #f8fafc; font-family: sans-serif; margin: 0; padding: 15px; }
+                .container { max-width: 1100px; margin: auto; background: #1e293b; padding: 20px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+                .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 15px; flex-wrap: wrap; gap: 10px; }
+                .header h2 { color: #38bdf8; margin: 0; font-size: 20px; }
+                .logout { background: #ef4444; color: white; padding: 8px 15px; border-radius: 6px; text-decoration: none; font-size: 14px; }
+                .panel-sections { display: grid; grid-template-columns: 1fr; gap: 20px; margin: 20px 0; max-width: 600px; margin-left: auto; margin-right: auto; }
+                .card-box { background: #0f172a; padding: 20px; border-radius: 8px; border: 1px solid #334155; }
+                .card-box h3 { margin-top: 0; color: #38bdf8; font-size: 16px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
+                select, input[type="number"] { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #334155; background: #1e293b; color: white; font-size: 14px; margin-bottom: 12px; }
+                button { padding: 12px 15px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; font-size: 14px; width: 100%; }
+                .btn-create { background: #22c55e; color: white; }
+                .btn-create:hover { background: #16a34a; }
+                .table-responsive { width: 100%; overflow-x: auto; margin-top: 20px; }
+                table { width: 100%; border-collapse: collapse; background: #0f172a; border-radius: 8px; overflow: hidden; min-width: 700px; }
+                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #1e293b; font-size: 13px; }
+                th { background: #334155; color: #38bdf8; }
+                .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+                .badge-active { background: #22c55e; color: white; }
+                .badge-banned { background: #ef4444; color: white; }
+                .badge-vip { background: #10b981; color: white; }
+                .badge-free { background: #6366f1; color: white; }
+                .btn-action { padding: 6px 10px; font-size: 12px; margin-right: 3px; border-radius: 4px; width: auto; display: inline-block; }
+                .btn-ban { background: #f59e0b; color: white; }
+                .btn-unban { background: #3b82f6; color: white; }
+                .btn-reset { background: #8b5cf6; color: white; }
+                .btn-del { background: #ef4444; color: white; }
+                .clickable-key { cursor: pointer; color: #38bdf8; text-decoration: underline; }
+                .clickable-key:hover { color: #7dd3fc; }
+                .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: white; padding: 12px 20px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: none; z-index: 9999; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>STARBABA Key Yönetim Paneli</h2>
+                    <a href="/logout" class="logout">Çıkış Yap</a>
+                </div>
+
+                <div class="panel-sections">
+                    <div class="card-box">
+                        <h3>Özel Tekil Key Oluştur</h3>
+                        <form method="POST" action="/action">
+                            <label style="font-size:13px; color:#94a3b8;">Kategori:</label>
+                            <select name="category">
+                                <option value="VIP">VIP Key</option>
+                                <option value="FREE">Free Key</option>
+                            </select>
+
+                            <label style="font-size:13px; color:#94a3b8;">Süre Türü:</label>
+                            <select name="key_type">
+                                <option value="day">Günlük (1 Gün)</option>
+                                <option value="week">Haftalık (7 Gün)</option>
+                                <option value="month">Aylık (30 Gün)</option>
+                                <option value="seasonal">Sezonluk</option>
+                                <option value="unlimited">Sınırsız</option>
+                            </select>
+
+                            <label style="font-size:13px; color:#94a3b8;">Kaç Cihaz Girebilsin?</label>
+                            <input type="number" name="max_devices" value="1" min="1" max="100000" required>
+
+                            <button type="submit" name="create_key" value="1" class="btn-create">Tek Key Üret</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Key Değeri (Tıkla Kopyala)</th>
+                                <th>Kategori</th>
+                                <th>Tür</th>
+                                <th>Durum</th>
+                                <th>Cihaz Limiti</th>
+                                <th>Kalan Süre</th>
+                                <th>İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="toast" class="toast">Key kopyalandı!</div>
+
+            <script>
+            function copyKey(text) {
+                navigator.clipboard.writeText(text).then(function() {
+                    var toast = document.getElementById("toast");
+                    toast.style.display = "block";
+                    setTimeout(function() { toast.style.display = "none"; }, 2000);
+                });
+            }
+            </script>
+        </body>
+        </html>
+    `);
+});
+
+app.listen(PORT, () => {
+    console.log(`Starbaba Server ${PORT} portunda başarıyla çalışıyor.`);
 });
