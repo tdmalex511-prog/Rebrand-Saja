@@ -1,13 +1,11 @@
 {
-  "name": "starbaba-key-bot",
+  "name": "starbaba-panel",
   "version": "1.0.0",
-  "description": "Starbaba Key System & Telegram Bot",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cookie-parser": "^1.4.6"
+    "express": "^4.19.2"
   }
 }
