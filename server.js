@@ -1,6 +1,6 @@
 // Cloudflare Worker – Multi-Device Limit System (Lua Response)
-const REPO_OWNER = "NivoCheats"; 
-const REPO_NAME = "json";
+const REPO_OWNER = "tdmalex511-prog"; 
+const REPO_NAME = "Rebrand-Saja";
 const BRANCH = "main";
 
 export default {
