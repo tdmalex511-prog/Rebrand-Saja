@@ -1,67 +1,106 @@
-// Cloudflare Worker – Multi-Device Limit System (Lua Response)
-const REPO_OWNER = "tdmalex511-prog"; 
-const REPO_NAME = "Rebrand-Saja";
+const http = require('http');
+const https = require('https');
+const url = require('url');
+const querystring = require('querystring');
+
+const REPO_OWNER = "NivoCheats";
+const REPO_NAME = "json";
 const BRANCH = "main";
 
-export default {
-  async fetch(request, env, ctx) {
-    if (request.method !== "POST") return new Response("Invalid Method", { status: 405 });
+// Cihaz sınırlarını takip etmek için bellek içi yapı
+const hwidStorage = {};
 
-    try {
-      const text = await request.text();
-      const params = new URLSearchParams(text);
-      const userKey = params.get("key");
-      const userHWID = params.get("hwid");
-
-      if (!userKey || !userHWID) {
-        return new Response('return { status = "error", message = "Missing Params" }');
-      }
-
-      // 1. Fetch Keylist from GitHub
-      const rawUrl = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/keylist.lua`;
-      const resp = await fetch(rawUrl, { cf: { cacheTtl: 30 } });
-      if (!resp.ok) return new Response('return { status = "error", message = "DB Error" }');
-
-      const luaContent = await resp.text();
-
-      // 2. Find Key Data and Max Devices Limit
-      const keyPattern = new RegExp(`\\["${userKey}"\\]\\s*=\\s*\\{([^}]+)\\}`, 's');
-      const match = luaContent.match(keyPattern);
-
-      if (!match) return new Response('return { status = "error", message = "Key Not Found" }');
-
-      const details = match[1];
-      if (details.includes('valid = false')) return new Response('return { status = "error", message = "Key Blocked" }');
-
-      // Extract limit from keylist (Default is 1 if not specified)
-      const limitMatch = details.match(/max_devices\s*=\s*(\d+)/);
-      const maxDevices = limitMatch ? parseInt(limitMatch[1]) : 1;
-
-      // 3. MULTI-DEVICE HWID LOGIC (Using Cloudflare KV)
-      if (env.HWID_DB) {
-        let hwidData = await env.HWID_DB.get(userKey);
-        let hwidList = hwidData ? JSON.parse(hwidData) : [];
-
-        // Check if current device is already in the list
-        if (!hwidList.includes(userHWID)) {
-          // New device detected! Check limit
-          if (hwidList.length < maxDevices) {
-            hwidList.push(userHWID);
-            await env.HWID_DB.put(userKey, JSON.stringify(hwidList));
-          } else {
-            // Limit reached
-            return new Response(`return { status = "error", message = "Limit Reached (${maxDevices} Devices Only)" }`);
-          }
-        }
-      }
-
-      // SUCCESS
-      return new Response(`return { status = "success", message = "Active", limit = ${maxDevices} }`, {
-        headers: { "Content-Type": "text/plain" }
-      });
-
-    } catch (err) {
-      return new Response(`return { status = "error", message = "Server Error: ${err.message}" }`);
+const server = http.createServer(async (req, res) => {
+    if (req.method !== 'POST') {
+        res.writeHead(405, { 'Content-Type': 'text/plain' });
+        res.end('Invalid Method');
+        return;
     }
-  }
-};
+
+    let body = '';
+    req.on('data', chunk => {
+        body += chunk.toString();
+    });
+
+    req.on('end', async () => {
+        try {
+            const params = querystring.parse(body);
+            const userKey = params.key;
+            const userHWID = params.hwid;
+
+            if (!userKey || !userHWID) {
+                res.writeHead(200, { 'Content-Type': 'text/plain' });
+                res.end('return { status = "error", message = "Missing Params" }');
+                return;
+            }
+
+            // 1. GitHub'dan keylist.lua dosyasını çekme
+            const rawUrl = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/keylist.lua`;
+            
+            https.get(rawUrl, (githubRes) => {
+                let luaContent = '';
+                githubRes.on('data', chunk => { luaContent += chunk; });
+                githubRes.on('end', () => {
+                    if (githubRes.statusCode !== 200) {
+                        res.writeHead(200, { 'Content-Type': 'text/plain' });
+                        res.end('return { status = "error", message = "DB Error" }');
+                        return;
+                    }
+
+                    // 2. Anahtarı ve detaylarını bulma
+                    const keyPattern = new RegExp(`\\["${userKey}"\\]\\s*=\\s*\\{([^}]+)\\}`, 's');
+                    const match = luaContent.match(keyPattern);
+
+                    if (!match) {
+                        res.writeHead(200, { 'Content-Type': 'text/plain' });
+                        res.end('return { status = "error", message = "Key Not Found" }');
+                        return;
+                    }
+
+                    const details = match[1];
+                    if (details.includes('valid = false')) {
+                        res.writeHead(200, { 'Content-Type': 'text/plain' });
+                        res.end('return { status = "error", message = "Key Blocked" }');
+                        return;
+                    }
+
+                    // Cihaz limitini okuma (belirtilmemişse varsayılan 1)
+                    const limitMatch = details.match(/max_devices\s*=\s*(\d+)/);
+                    const maxDevices = limitMatch ? parseInt(limitMatch[1]) : 1;
+
+                    // 3. HWID ve Cihaz Sınırı Kontrolü
+                    if (!hwidStorage[userKey]) {
+                        hwidStorage[userKey] = [];
+                    }
+                    let hwidList = hwidStorage[userKey];
+
+                    if (!hwidList.includes(userHWID)) {
+                        if (hwidList.length < maxDevices) {
+                            hwidList.push(userHWID);
+                        } else {
+                            res.writeHead(200, { 'Content-Type': 'text/plain' });
+                            res.end(`return { status = "error", message = "Limit Reached (${maxDevices} Devices Only)" }`);
+                            return;
+                        }
+                    }
+
+                    // BAŞARILI YANITI
+                    res.writeHead(200, { 'Content-Type': 'text/plain' });
+                    res.end(`return { status = "success", message = "Active", limit = ${maxDevices} }`);
+                });
+            }).on('error', (err) => {
+                res.writeHead(200, { 'Content-Type': 'text/plain' });
+                res.end(`return { status = "error", message = "Network Error" }`);
+            });
+
+        } catch (err) {
+            res.writeHead(200, { 'Content-Type': 'text/plain' });
+            res.end(`return { status = "error", message = "Server Error" }`);
+        }
+    });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
