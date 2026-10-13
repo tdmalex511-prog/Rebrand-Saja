@@ -1,106 +1,56 @@
-const http = require('http');
-const https = require('https');
-const url = require('url');
-const querystring = require('querystring');
 
-const REPO_OWNER = "NivoCheats";
-const REPO_NAME = "json";
-const BRANCH = "main";
+const express = require("express");
 
-// Cihaz sınırlarını takip etmek için bellek içi yapı
-const hwidStorage = {};
-
-const server = http.createServer(async (req, res) => {
-    if (req.method !== 'POST') {
-        res.writeHead(405, { 'Content-Type': 'text/plain' });
-        res.end('Invalid Method');
-        return;
-    }
-
-    let body = '';
-    req.on('data', chunk => {
-        body += chunk.toString();
-    });
-
-    req.on('end', async () => {
-        try {
-            const params = querystring.parse(body);
-            const userKey = params.key;
-            const userHWID = params.hwid;
-
-            if (!userKey || !userHWID) {
-                res.writeHead(200, { 'Content-Type': 'text/plain' });
-                res.end('return { status = "error", message = "Missing Params" }');
-                return;
-            }
-
-            // 1. GitHub'dan keylist.lua dosyasını çekme
-            const rawUrl = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/keylist.lua`;
-            
-            https.get(rawUrl, (githubRes) => {
-                let luaContent = '';
-                githubRes.on('data', chunk => { luaContent += chunk; });
-                githubRes.on('end', () => {
-                    if (githubRes.statusCode !== 200) {
-                        res.writeHead(200, { 'Content-Type': 'text/plain' });
-                        res.end('return { status = "error", message = "DB Error" }');
-                        return;
-                    }
-
-                    // 2. Anahtarı ve detaylarını bulma
-                    const keyPattern = new RegExp(`\\["${userKey}"\\]\\s*=\\s*\\{([^}]+)\\}`, 's');
-                    const match = luaContent.match(keyPattern);
-
-                    if (!match) {
-                        res.writeHead(200, { 'Content-Type': 'text/plain' });
-                        res.end('return { status = "error", message = "Key Not Found" }');
-                        return;
-                    }
-
-                    const details = match[1];
-                    if (details.includes('valid = false')) {
-                        res.writeHead(200, { 'Content-Type': 'text/plain' });
-                        res.end('return { status = "error", message = "Key Blocked" }');
-                        return;
-                    }
-
-                    // Cihaz limitini okuma (belirtilmemişse varsayılan 1)
-                    const limitMatch = details.match(/max_devices\s*=\s*(\d+)/);
-                    const maxDevices = limitMatch ? parseInt(limitMatch[1]) : 1;
-
-                    // 3. HWID ve Cihaz Sınırı Kontrolü
-                    if (!hwidStorage[userKey]) {
-                        hwidStorage[userKey] = [];
-                    }
-                    let hwidList = hwidStorage[userKey];
-
-                    if (!hwidList.includes(userHWID)) {
-                        if (hwidList.length < maxDevices) {
-                            hwidList.push(userHWID);
-                        } else {
-                            res.writeHead(200, { 'Content-Type': 'text/plain' });
-                            res.end(`return { status = "error", message = "Limit Reached (${maxDevices} Devices Only)" }`);
-                            return;
-                        }
-                    }
-
-                    // BAŞARILI YANITI
-                    res.writeHead(200, { 'Content-Type': 'text/plain' });
-                    res.end(`return { status = "success", message = "Active", limit = ${maxDevices} }`);
-                });
-            }).on('error', (err) => {
-                res.writeHead(200, { 'Content-Type': 'text/plain' });
-                res.end(`return { status = "error", message = "Network Error" }`);
-            });
-
-        } catch (err) {
-            res.writeHead(200, { 'Content-Type': 'text/plain' });
-            res.end(`return { status = "error", message = "Server Error" }`);
-        }
-    });
-});
+const app = express();
+app.use(express.json({ limit: "10kb" }));
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+
+// Demo key. Gerçek kullanımda Render Environment
+// değişkeni üzerinden ayarlayın.
+const VIP_KEY = process.env.VIP_KEY;
+
+app.get("/", (req, res) => {
+  res.json({
+    status: "online",
+    service: "VIP License API",
+    version: "1.0.0"
+  });
+});
+
+app.post("/api/verify", (req, res) => {
+  const key =
+    typeof req.body?.key === "string"
+      ? req.body.key.trim()
+      : "";
+
+  if (!key) {
+    return res.status(400).json({
+      valid: false,
+      message: "Key girilmedi."
+    });
+  }
+
+  if (!VIP_KEY) {
+    return res.status(503).json({
+      valid: false,
+      message: "Lisans sistemi yapılandırılmamış."
+    });
+  }
+
+  if (key !== VIP_KEY) {
+    return res.status(401).json({
+      valid: false,
+      message: "Geçersiz key."
+    });
+  }
+
+  return res.json({
+    valid: true,
+    message: "Lisans doğrulandı."
+  });
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`VIP License API listening on port ${PORT}`);
 });
