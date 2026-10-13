@@ -1,10 +1,13 @@
+
 {
-  "name": "rebrand-saja",
+  "name": "vip-license-server",
   "version": "1.0.0",
-  "description": "License Server",
+  "private": true,
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "dependencies": {}
+  "dependencies": {
+    "express": "^5.1.0"
+  }
 }
